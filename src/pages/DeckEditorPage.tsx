@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deckToText, parseDeckText, type ImportedCard } from '../lib/deckImport'
 import { deckTotals, loadDecks, newDeckId, saveDecks, type CustomDeck } from '../lib/storage'
 import { downloadBlob, exportDeckImage } from '../lib/deckImage'
-import { resolveArtForImages } from '../lib/cardArt'
+import { artCandidatesByName } from '../lib/cardArt'
 import { enrichCards, type CardMeta } from '../lib/enrich'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
 import type { StatCard } from '../lib/deckStats'
@@ -134,19 +134,20 @@ export default function DeckEditorPage() {
     if (!parsed.ok) return setError(parsed.error)
     setBusy(true)
     try {
-      const art = await resolveArtForImages(parsed.deck.cards.map((c) => ({ name: c.name })))
-      const cards = parsed.deck.cards.map((c) => ({
-        name: c.name,
-        quantity: c.quantity,
-        sideboard: c.sideboard,
-        imageUrl: art.get(c.name) ?? null,
-      }))
+      const cards = await Promise.all(
+        parsed.deck.cards.map(async (c) => ({
+          name: c.name,
+          quantity: c.quantity,
+          sideboard: c.sideboard,
+          imageUrl: await artCandidatesByName(c.name),
+        })),
+      )
       const res = await exportDeckImage({
         deckName: name.trim() || '未命名套牌',
         subtitle: [format, player].filter(Boolean).join('  ·  '),
         cards,
       })
-      downloadBlob(res.blob, name.trim(), 'deck')
+      downloadBlob(res.blob, name.trim(), 'deck', res.ext)
     } catch (e) {
       setError(String((e as Error).message ?? e))
     } finally {

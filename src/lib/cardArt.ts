@@ -233,7 +233,18 @@ export async function artCandidates(src: ArtSource, stage: number): Promise<stri
 
 /* --------------------------------- 探测 --------------------------------- */
 
-export function probeImage(url: string, crossOrigin = false, timeoutMs = 15000): Promise<boolean> {
+/**
+ * 单张卡的「找图总预算」。
+ * 回退链最长是 主图变体 → 所有印刷版本 → Scryfall，候选可能有几十个；
+ * 逐个 probe 时一张彻底无图的卡能拖好几分钟，而 Promise.all 一批 6 张会一起等它，
+ * 表现为分享图进度条卡在 18/30 不动（用户眼里就是"分享图坏了"）。
+ * 给每张卡一个硬预算，超时就用占位图，保证整副牌的导出时间可控。
+ */
+const CARD_BUDGET_MS = 8_000
+/** 每个回退阶段最多试几个候选（图床命名变体可能有十几个） */
+const STAGE_LIMIT = [6, 6, 4] as const
+
+export function probeImage(url: string, crossOrigin = false, timeoutMs = 6000): Promise<boolean> {
   return new Promise((resolve) => {
     const img = new Image()
     if (crossOrigin) img.crossOrigin = 'anonymous'
@@ -264,10 +275,16 @@ function cacheKeyOf(src: ArtSource): string {
 export async function resolveWorkingArt(src: ArtSource, crossOrigin = false): Promise<string | null> {
   const key = `${crossOrigin ? 'C' : 'N'}|${cacheKeyOf(src)}`
   if (resolvedCache.has(key)) return resolvedCache.get(key) ?? null
+  const deadline = Date.now() + CARD_BUDGET_MS
   for (let stage = 0; stage < 3; stage++) {
     const urls = await artCandidates(src, stage).catch(() => [] as string[])
-    for (const u of urls) {
-      if (await probeImage(u, crossOrigin)) {
+    const limit = STAGE_LIMIT[stage] ?? 4
+    for (const u of urls.slice(0, limit)) {
+      const left = deadline - Date.now()
+      // 预算耗尽：返回 null（走占位图）。**不写缓存** —— 这只是本次超时，
+      // 下次网络好的时候还能重试成功。
+      if (left <= 0) return null
+      if (await probeImage(u, crossOrigin, Math.min(6000, left))) {
         resolvedCache.set(key, u)
         return u
       }
@@ -277,33 +294,58 @@ export async function resolveWorkingArt(src: ArtSource, crossOrigin = false): Pr
   return null
 }
 
-/** 批量解析（导出用）。返回 Map 以卡名为键，与旧 resolveArt 用法一致 */
+/**
+ * 只有卡名时（自定义套牌），解析出有序的候选图 URL 供导出惰性回退：
+ * 主图 → 图床命名变体 → Scryfall 按系列编号。
+ * 不做预先 probe：导出阶段自己按顺序试，绝大多数牌第一个就命中。
+ */
+export async function artCandidatesByName(name: string): Promise<string[]> {
+  const card = await cardByName(name)
+  const primary = card?.image_url ?? null
+  const list = imageVariants(primary).slice(0, 4)
+  const sf = scryfallPrintUrl(card?.set_code ?? null, card?.collector_number ?? null, false)
+  if (sf) list.push(sf)
+  return list
+}
+
+/**
+ * 批量解析（导出用）。返回 Map 以卡名为键，与旧 resolveArt 用法一致。
+ *
+ * 用**固定大小的工人池**而不是分批 Promise.all：分批时一批里只要有一张慢牌，
+ * 其余 5 张就得陪着等，进度条会长时间不动。工人池里谁先好谁接下一张。
+ */
 export async function resolveArtForImages(
   sources: ArtSource[],
   onProgress?: (done: number, total: number) => void,
   crossOrigin = true,
   concurrency = 6,
+  signal?: AbortSignal,
+  /** 整批的硬时限：到点就停止找图，没找到的用占位图，保证导出一定完成 */
+  deadlineMs = 20_000,
 ): Promise<Map<string, string | null>> {
   const out = new Map<string, string | null>()
   const total = sources.length
+  const deadline = Date.now() + deadlineMs
   let done = 0
-  for (let i = 0; i < sources.length; i += concurrency) {
-    const batch = sources.slice(i, i + concurrency)
-    const res = await Promise.all(
-      batch.map(async (s) => {
-        try {
-          return await resolveWorkingArt(s, crossOrigin)
-        } catch {
-          return null
-        }
-      }),
-    )
-    batch.forEach((s, j) => {
-      out.set((s.name ?? s.url ?? '').trim(), res[j])
-    })
-    done += batch.length
-    onProgress?.(done, total)
-  }
+  let cursor = 0
+  const workers = Array.from({ length: Math.max(1, Math.min(concurrency, total || 1)) }, async () => {
+    for (;;) {
+      if (signal?.aborted || Date.now() > deadline) return
+      const i = cursor++
+      if (i >= total) return
+      const s = sources[i]
+      let url: string | null = null
+      try {
+        url = await resolveWorkingArt(s, crossOrigin)
+      } catch {
+        url = null
+      }
+      out.set((s.name ?? s.url ?? '').trim(), url)
+      done++
+      onProgress?.(done, total)
+    }
+  })
+  await Promise.all(workers)
   return out
 }
 

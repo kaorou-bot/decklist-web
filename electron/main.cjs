@@ -7,7 +7,7 @@
  * 2. asar 打包后 dist 位于 app.asar/dist，Electron 已 patch 过 fs，可直接读。
  * 3. 单实例锁定，重复启动只激活已有窗口。
  */
-const { app, BrowserWindow, Menu, shell, dialog, session } = require('electron')
+const { app, BrowserWindow, Menu, shell, dialog, session, ipcMain } = require('electron')
 const http = require('node:http')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -56,10 +56,66 @@ const MIME = {
   '.map': 'application/json; charset=utf-8',
 }
 
+/** 允许通过 /img 代理下载的图床域名（防 SSRF：只认这几个白名单） */
+const IMG_HOSTS = new Set([
+  'images.mtg-forge-kaorou.vip',
+  'api.scryfall.com',
+  'cards.scryfall.io',
+])
+
+/**
+ * 图片代理：/img?u=<远端图片 URL>
+ *
+ * 为什么需要它：分享图导出要一次性拉几十张卡图画进 Canvas。浏览器直连跨域图片时
+ * 必须带 crossOrigin=anonymous，而实测在部分机器上批量跨域图片加载会把渲染进程
+ * 和主进程一起拖住，导出进度条直接卡死。改由主进程代拉、以同源地址返回后，
+ * 页面拿到的是同源图片——既不需要 CORS，也不会污染画布，还不依赖图床的 CORS 头。
+ */
+async function proxyImage(res, rawUrl) {
+  let target
+  try {
+    target = new URL(rawUrl)
+  } catch {
+    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' }).end('bad url')
+    return
+  }
+  if (target.protocol !== 'https:' || !IMG_HOSTS.has(target.hostname)) {
+    res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' }).end('host not allowed')
+    return
+  }
+  try {
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 15000)
+    const upstream = await fetch(target.href, { signal: ctrl.signal }).finally(() => clearTimeout(timer))
+    if (!upstream.ok || !upstream.body) {
+      res.writeHead(upstream.status || 502).end()
+      return
+    }
+    const buf = Buffer.from(await upstream.arrayBuffer())
+    res.writeHead(200, {
+      'Content-Type': upstream.headers.get('content-type') || 'image/jpeg',
+      'Cache-Control': 'public, max-age=86400',
+      'Access-Control-Allow-Origin': '*',
+    })
+    res.end(buf)
+  } catch (err) {
+    res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' }).end(String(err && err.message))
+  }
+}
+
 /** 在指定端口启动静态服务器 */
 function serveDist(root, port) {
   const server = http.createServer((req, res) => {
     let rel = decodeURIComponent((req.url || '/').split('?')[0])
+    if (rel === '/img') {
+      const q = new URL(req.url || '/', 'http://127.0.0.1').searchParams.get('u')
+      if (!q) {
+        res.writeHead(400).end('missing u')
+        return
+      }
+      proxyImage(res, q)
+      return
+    }
     if (rel === '/' || rel === '') rel = '/index.html'
     // 防目录穿越
     const filePath = path.normalize(path.join(root, rel))
@@ -112,16 +168,21 @@ async function bindServer(root) {
   candidates.push(21517)
   for (let p = 21518; p <= 21650; p++) candidates.push(p)
   for (const port of candidates) {
-    try {
-      const server = await serveDist(root, port)
+    // 端口冲突常常是瞬时的（上一个进程刚退出还处于 TIME_WAIT / 正在释放），
+    // 快速重试几次比直接跳到下一个端口更好——换端口意味着 localStorage 换 origin。
+    for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        fs.writeFileSync(portFile, String(port))
+        const server = await serveDist(root, port)
+        try {
+          fs.mkdirSync(path.dirname(portFile), { recursive: true })
+          fs.writeFileSync(portFile, String(port))
+        } catch {
+          /* 写不进去也无所谓，只是下次换个端口 */
+        }
+        return { server, port }
       } catch {
-        /* 写不进去也无所谓，只是下次换个端口 */
+        await new Promise((r) => setTimeout(r, 300))
       }
-      return { server, port }
-    } catch {
-      /* 端口被占用，试下一个 */
     }
   }
   // 理论上到不了这里；实在不行退回随机端口（localStorage 会随端口失效，但应用可用）
@@ -129,8 +190,61 @@ async function bindServer(root) {
   return { server, port: server.address().port }
 }
 
+// ---- 保存图片（桌面端专用） ---------------------------------------------
+//
+// 不用浏览器的 `<a download>`：实测 Electron 的下载通道会把整个应用卡住
+// （界面不动、DevTools 也不再应答）。改成渲染进程把 base64 发过来、主进程直接写盘。
+ipcMain.handle('dlw:save-image', async (_e, payload) => {
+  const base64 = payload && payload.base64
+  const rawName = (payload && payload.filename) || 'deck.jpg'
+  if (typeof base64 !== 'string' || !base64) return { ok: false, error: '没有图片数据' }
+  const safe = rawName.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'deck.jpg'
+  const dir = app.getPath('downloads')
+  let target = path.join(dir, safe)
+  try {
+    let n = 1
+    const dot = safe.lastIndexOf('.')
+    const stem = dot > 0 ? safe.slice(0, dot) : safe
+    const ext = dot > 0 ? safe.slice(dot) : ''
+    while (fs.existsSync(target) && n < 100) target = path.join(dir, `${stem} (${n++})${ext}`)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(target, Buffer.from(base64, 'base64'))
+    return { ok: true, path: target }
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) }
+  }
+})
+
 // ---- 窗口 --------------------------------------------------------------
 let mainWindow = null
+
+/**
+ * 在页面底部弹一条提示（会被 executeJavaScript 序列化进渲染进程执行）。
+ * 独立实现，不依赖前端代码，避免为了一个提示去改页面组件。
+ */
+function toast(msg) {
+  try {
+    const old = document.getElementById('dlw-toast')
+    if (old) old.remove()
+    const el = document.createElement('div')
+    el.id = 'dlw-toast'
+    el.textContent = msg
+    el.title = '点击关闭'
+    el.style.cssText =
+      'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:99999;max-width:80vw;' +
+      'background:#1f6feb;color:#fff;padding:10px 16px;border-radius:8px;cursor:pointer;' +
+      'font:14px/1.5 "Microsoft YaHei",system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.35)'
+    el.onclick = function () {
+      el.remove()
+    }
+    document.body.appendChild(el)
+    setTimeout(function () {
+      el.remove()
+    }, 8000)
+  } catch (e) {
+    /* 页面正在跳转等情况，忽略 */
+  }
+}
 
 function buildMenu() {
   const isMac = process.platform === 'darwin'
@@ -188,6 +302,7 @@ function createWindow(url) {
     autoHideMenuBar: false,
     webPreferences: {
       // 静态服务是本地内容，无需 node 集成；保持上下文隔离更安全
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolated: true,
       nodeIntegration: false,
       sandbox: false,
@@ -218,16 +333,28 @@ function createWindow(url) {
     }
   })
 
-  // 分享图等下载：弹「另存为」对话框（静默保存没有反馈，像是坏了）。
+  // 分享图等下载：**静默保存到「下载」目录 + 页面内提示**。
+  // 这里绝不能用「另存为」对话框：它是模态的，会阻塞主进程的消息循环，
+  // 对话框开着时整个应用（包括页面和 DevTools）都会假死，看起来就像导出崩了。
   // 套牌名可能带 / 等非法文件名字符（如 "4/5C Control"），必须净化，否则保存静默失败。
   mainWindow.webContents.session.on('will-download', (_e, item) => {
-    const raw = item.getSuggestedFilename() || 'deck.png'
-    const safe = raw.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'deck.png'
-    item.setSaveDialogOptions({
-      title: '保存图片',
-      defaultPath: path.join(app.getPath('downloads'), safe),
-      filters: [{ name: '图片', extensions: ['png'] }],
-    })
+    const raw = item.getSuggestedFilename() || 'deck.jpg'
+    const safe = raw.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'deck.jpg'
+    const dir = app.getPath('downloads')
+    let target = path.join(dir, safe)
+    try {
+      let n = 1
+      const dot = safe.lastIndexOf('.')
+      const stem = dot > 0 ? safe.slice(0, dot) : safe
+      const ext = dot > 0 ? safe.slice(dot) : ''
+      while (fs.existsSync(target) && n < 100) target = path.join(dir, `${stem} (${n++})${ext}`)
+    } catch {
+      /* 查不到就直接用原路径 */
+    }
+    item.setSavePath(target)
+    // 注意：这里**不要**在 done 回调里调 executeJavaScript 去弹提示——
+    // 实测 Electron 在下载回调里同步往渲染进程注入脚本会把整个应用卡死
+    // （进度条不动、连 DevTools 都不再应答）。保存结果改由前端自己提示。
   })
 
   mainWindow.loadURL(url)

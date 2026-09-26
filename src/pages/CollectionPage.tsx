@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { deckTotals, loadDecks, saveDecks, type CustomDeck } from '../lib/storage'
 import { downloadBlob, exportDeckImage } from '../lib/deckImage'
-import { resolveArtForImages } from '../lib/cardArt'
+import { artCandidatesByName } from '../lib/cardArt'
 import { detailPathOf, editorPathOf } from '../lib/localDeck'
 
 export default function CollectionPage() {
@@ -24,21 +24,22 @@ export default function CollectionPage() {
     setBusy(d.id)
     setError(null)
     try {
-      // 自定义套牌只有卡名，先回查 Forge 拿 URL，再按回退链 probe 出真正可用的图
-      const art = await resolveArtForImages(d.cards.map((c) => ({ name: c.name })))
-      const withImages = d.cards.map((c) => ({
-        name: c.name,
-        quantity: c.quantity,
-        sideboard: c.sideboard,
-        imageUrl: art.get(c.name) ?? null,
-      }))
+      // 自定义套牌只有卡名：先回查 Forge 拿主图 URL，导出时再按候选链惰性回退
+      const withImages = await Promise.all(
+        d.cards.map(async (c) => ({
+          name: c.name,
+          quantity: c.quantity,
+          sideboard: c.sideboard,
+          imageUrl: await artCandidatesByName(c.name),
+        })),
+      )
       const t = deckTotals(d.cards)
       const res = await exportDeckImage({
         deckName: d.name,
         subtitle: [d.format, d.player, `主牌 ${t.main}${t.side ? ` · 备牌 ${t.side}` : ''}`].filter(Boolean).join('  ·  '),
         cards: withImages,
       })
-      downloadBlob(res.blob, d.name, 'deck')
+      downloadBlob(res.blob, d.name, 'deck', res.ext)
       if (res.missing > 0) setError(`${res.missing} 张卡图缺失，已用占位替代`)
     } catch (e) {
       setError(String((e as Error).message ?? e))

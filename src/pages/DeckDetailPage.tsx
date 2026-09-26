@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ServerDeck, ServerDeckCard } from '../api/types'
@@ -6,7 +6,7 @@ import { isMultiPart, isTrueDualFace } from '../lib/layout'
 import { estimateManaValue } from '../lib/mana'
 import ManaCost from '../components/ManaCost'
 import { downloadBlob, exportDeckImage } from '../lib/deckImage'
-import { resolveArtForImages } from '../lib/cardArt'
+import { imageVariants, scryfallPrintUrl } from '../lib/cardArt'
 import { customDeckToServerDeck, editorPathOf, findLocalDeck, isLocalDeckId, localDeckId, saveServerDeck } from '../lib/localDeck'
 import { enrichCards, type CardMeta } from '../lib/enrich'
 import CardImage from '../components/CardImage'
@@ -33,6 +33,9 @@ export default function DeckDetailPage() {
   const [enriching, setEnriching] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [progress, setProgress] = useState<[number, number] | null>(null)
+  // 分享图分两阶段：先找图（网络 probe），再绘制。分开显示进度，用户才知道卡在哪一步
+  const [phase, setPhase] = useState<'art' | 'draw' | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
   const [flipped, setFlipped] = useState<Record<string, boolean>>({})
   const [tab, setTab] = useState<Tab>('list')
@@ -138,22 +141,23 @@ export default function DeckDetailPage() {
 
   const handleExport = async () => {
     if (!deck) return
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
     setExporting(true)
     setProgress(null)
+    setPhase('draw')
     setError(null)
     try {
-      // 分享图前先 probe：图床存在「有 URL 但文件缺失」的情况
-      // （如惨痛胜利指向 Bitter%20Triumph3.fullborder.jpg → 404），
-      // resolveArtForImages 会按「命名变体 → 其它印刷 → Scryfall」逐级找可用图，
-      // 并以 crossOrigin=anonymous 验证，保证 Canvas 不被污染。
-      const art = await resolveArtForImages(
-        sorted.map((r) => ({
-          name: r.name,
-          url: r.image_url ?? r.meta?.imageUrl ?? null,
-          cardId: r.card_id ?? null,
-        })),
-        (d, t) => setProgress([d, t]),
-      )
+      // 不再单独做一轮 probe：直接把「主图 → 图床命名变体 → Scryfall」的候选列表
+      // 交给绘制阶段，只有真的加载失败才发下一个请求。正常一副牌就是 30 个请求，
+      // 预先逐个 probe 的话最坏要发一百多个，慢且容易卡住。
+      const artOf = (r: Row): (string | null)[] => {
+        const primary = r.image_url ?? r.meta?.imageUrl ?? null
+        const list: (string | null)[] = imageVariants(primary).slice(0, 4)
+        const sf = scryfallPrintUrl(r.meta?.setCode ?? null, r.meta?.collectorNumber ?? null, false)
+        if (sf) list.push(sf)
+        return list
+      }
       const parts = [
         deck.format,
         deck.player,
@@ -168,20 +172,26 @@ export default function DeckDetailPage() {
           name: r.name_zh || r.name,
           quantity: r.quantity,
           sideboard: r.side,
-          imageUrl: art.get(r.name) ?? null,
+          imageUrl: artOf(r),
         })),
         onProgress: (d, t) => setProgress([d, t]),
+        signal: ctrl.signal,
       })
       setPreview(URL.createObjectURL(res.blob))
-      downloadBlob(res.blob, deck.deck_name, 'deck')
+      downloadBlob(res.blob, deck.deck_name, 'deck', res.ext)
       if (res.missing > 0) setError(`${res.missing} 张卡图缺失，已用占位替代`)
     } catch (e) {
-      setError(String((e as Error).message ?? e))
+      const err = e as Error
+      setError(err.name === 'AbortError' ? '已取消生成' : String(err.message ?? err))
     } finally {
+      abortRef.current = null
       setExporting(false)
       setProgress(null)
+      setPhase(null)
     }
   }
+
+  const handleCancelExport = () => abortRef.current?.abort()
 
   // 对齐 App：点一下就把整副牌表存进套牌集（App 是「收藏」，网页端对应套牌集）
   const handleSaveToCollection = () => {
@@ -227,8 +237,11 @@ export default function DeckDetailPage() {
         </div>
         <div className="row wrap">
           <button onClick={handleExport} disabled={exporting}>
-            {exporting ? `生成中${progress ? ` ${progress[0]}/${progress[1]}` : '…'}` : '生成分享图'}
+            {exporting
+              ? `${phase === 'draw' ? '绘制中' : '找图中'}${progress ? ` ${progress[0]}/${progress[1]}` : '…'}`
+              : '生成分享图'}
           </button>
+          {exporting && <button className="small" onClick={handleCancelExport}>取消</button>}
           {isLocal ? (
             <Link to={editorPathOf(id ?? '')}><button>编辑套牌</button></Link>
           ) : (
