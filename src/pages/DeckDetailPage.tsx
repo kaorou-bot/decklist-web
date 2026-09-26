@@ -11,6 +11,7 @@ import { imageVariants, scryfallPrintUrl } from '../lib/cardArt'
 import { customDeckToServerDeck, editorPathOf, findLocalDeck, isLocalDeckId, localDeckId, saveServerDeck } from '../lib/localDeck'
 import { enrichCards, type CardMeta } from '../lib/enrich'
 import CardImage from '../components/CardImage'
+import CardVersionDialog, { type VersionPick } from '../components/CardVersionDialog'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
 import type { StatCard } from '../lib/deckStats'
 
@@ -40,6 +41,9 @@ export default function DeckDetailPage() {
   // 生成结果：交给 ShareImagePanel 展示预览 + 保存入口（不再只是静默写盘）
   const [shot, setShot] = useState<{ blob: Blob; ext: string; name: string } | null>(null)
   const [flipped, setFlipped] = useState<Record<string, boolean>>({})
+  // 牌表里每张卡选中的印刷版本（按卡名记），选中后牌表与分享图都用它
+  const [picks, setPicks] = useState<Record<string, VersionPick>>({})
+  const [versionRow, setVersionRow] = useState<Row | null>(null)
   const [tab, setTab] = useState<Tab>('list')
   const [similar, setSimilar] = useState<ServerDeck[]>([])
   const [similarLoading, setSimilarLoading] = useState(false)
@@ -154,7 +158,9 @@ export default function DeckDetailPage() {
       // 交给绘制阶段，只有真的加载失败才发下一个请求。正常一副牌就是 30 个请求，
       // 预先逐个 probe 的话最坏要发一百多个，慢且容易卡住。
       const artOf = (r: Row): (string | null)[] => {
-        const primary = r.image_url ?? r.meta?.imageUrl ?? null
+        // 牌表里选过版本就用选的那张，其余候选照旧排在后面兜底
+        const picked = picks[r.name]?.imageUrl ?? null
+        const primary = picked ?? r.image_url ?? r.meta?.imageUrl ?? null
         const list: (string | null)[] = imageVariants(primary).slice(0, 4)
         const sf = scryfallPrintUrl(r.meta?.setCode ?? null, r.meta?.collectorNumber ?? null, false)
         if (sf) list.push(sf)
@@ -293,13 +299,13 @@ export default function DeckDetailPage() {
         <>
           {commanders.length > 0 && (
             <div style={{ marginBottom: 16 }}>
-              <CardSection title={`指挥官 · ${deck.commander_count ?? commanders.length} 张`} rows={commanders} flipped={flipped} setFlipped={setFlipped} />
+              <CardSection title={`指挥官 · ${deck.commander_count ?? commanders.length} 张`} rows={commanders} flipped={flipped} setFlipped={setFlipped} picks={picks} onPickVersion={setVersionRow} />
             </div>
           )}
-          <CardSection title={`主牌 · ${deck.mainboard_count} 张`} rows={main} flipped={flipped} setFlipped={setFlipped} />
+          <CardSection title={`主牌 · ${deck.mainboard_count} 张`} rows={main} flipped={flipped} setFlipped={setFlipped} picks={picks} onPickVersion={setVersionRow} />
           {side.length > 0 && (
             <div style={{ marginTop: 16 }}>
-              <CardSection title={`备牌 · ${deck.sideboard_count} 张`} rows={side} flipped={flipped} setFlipped={setFlipped} />
+              <CardSection title={`备牌 · ${deck.sideboard_count} 张`} rows={side} flipped={flipped} setFlipped={setFlipped} picks={picks} onPickVersion={setVersionRow} />
             </div>
           )}
         </>
@@ -337,6 +343,36 @@ export default function DeckDetailPage() {
         </section>
       )}
 
+      {versionRow && (
+        <CardVersionDialog
+          name={versionRow.name}
+          nameZh={versionRow.name_zh}
+          cardId={versionRow.meta?.cardId ?? versionRow.card_id ?? null}
+          current={picks[versionRow.name] ?? null}
+          original={{
+            imageUrl: versionRow.image_url ?? versionRow.meta?.imageUrl ?? null,
+            setCode: versionRow.meta?.setCode ?? null,
+            setNameZh: null,
+            collectorNumber: versionRow.meta?.collectorNumber ?? null,
+            rarity: null,
+          }}
+          backImageUrl={versionRow.meta?.backImageUrl ?? null}
+          isDualFace={
+            isTrueDualFace(versionRow.meta?.layout ?? null) ||
+            (versionRow.meta?.layout == null && !!versionRow.meta?.backImageUrl)
+          }
+          onPick={(p) =>
+            setPicks((prev) => {
+              const next = { ...prev }
+              if (p) next[versionRow.name] = p
+              else delete next[versionRow.name]
+              return next
+            })
+          }
+          onClose={() => setVersionRow(null)}
+        />
+      )}
+
       <div style={{ marginTop: 18 }}>
         {isLocal ? (
           <Link to="/custom" className="small muted">← 返回套牌集</Link>
@@ -353,11 +389,16 @@ function CardSection({
   rows,
   flipped,
   setFlipped,
+  picks,
+  onPickVersion,
 }: {
   title: string
   rows: Row[]
   flipped: Record<string, boolean>
   setFlipped: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
+  /** 每张卡选中的印刷版本（键为卡名） */
+  picks: Record<string, VersionPick>
+  onPickVersion: (row: Row) => void
 }) {
   return (
     <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -370,7 +411,11 @@ function CardSection({
           const dual = isTrueDualFace(layout) || (layout == null && !!r.meta?.backImageUrl)
           const multi = isMultiPart(layout)
           const showBack = dual && flipped[r.name]
-          const img = showBack ? r.meta?.backImageUrl : (r.image_url ?? r.meta?.imageUrl)
+          const pick = picks[r.name]
+          // 翻到背面时优先背面；否则用选中的版本，没选过就用 API 给的图
+          const img = showBack
+            ? r.meta?.backImageUrl
+            : pick?.imageUrl ?? (r.image_url ?? r.meta?.imageUrl)
           const faces = r.meta?.faces
           return (
             <div key={`${r.name}-${i}`} className="card-row">
@@ -379,12 +424,13 @@ function CardSection({
                 source={{
                   url: img,
                   cardId: r.meta?.cardId ?? r.card_id ?? null,
-                  setCode: r.meta?.setCode ?? null,
-                  collectorNumber: r.meta?.collectorNumber ?? null,
+                  setCode: pick?.setCode ?? r.meta?.setCode ?? null,
+                  collectorNumber: pick?.collectorNumber ?? r.meta?.collectorNumber ?? null,
                   name: r.name,
                   isBack: showBack,
                 }}
                 placeholder={<span className="small muted">无图</span>}
+                onClick={() => onPickVersion(r)}
               />
               <span className="qty">{r.quantity}×</span>
               <div className="card-name">
@@ -415,6 +461,21 @@ function CardSection({
               {!multi && <ManaCost cost={r.meta?.manaCost} />}
               {dual && <span className="badge badge-gold">双面</span>}
               {multi && <span className="badge">多部分</span>}
+              {/* 版本入口：选过就显示系列#编号，没选过显示「版本」 */}
+              {pick ? (
+                <button
+                  className="printing-chip on"
+                  title="点击更换印刷版本"
+                  onClick={() => onPickVersion(r)}
+                >
+                  <strong>{pick.setCode || '—'}</strong>
+                  <span className="small">#{pick.collectorNumber ?? '—'}</span>
+                </button>
+              ) : (
+                <button className="small" title="选择印刷版本" onClick={() => onPickVersion(r)}>
+                  版本
+                </button>
+              )}
             </div>
           )
         })}
