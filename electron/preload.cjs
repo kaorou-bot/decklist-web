@@ -8,5 +8,12 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('dlw', {
+  // 保存到系统「下载」目录，返回真实路径
   saveImage: (payload) => ipcRenderer.invoke('dlw:save-image', payload),
+  // 复制图片到系统剪贴板（可直接粘到微信 / QQ 里分享）
+  copyImage: (payload) => ipcRenderer.invoke('dlw:copy-image', payload),
+  // 在文件管理器里选中刚保存的文件
+  showItem: (payload) => ipcRenderer.invoke('dlw:show-item', payload),
+  // 「下载」目录在哪，界面上要告诉用户
+  downloadsDir: () => ipcRenderer.invoke('dlw:downloads-dir'),
 })

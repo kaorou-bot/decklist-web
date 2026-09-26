@@ -5,7 +5,8 @@ import type { ServerDeck, ServerDeckCard } from '../api/types'
 import { isMultiPart, isTrueDualFace } from '../lib/layout'
 import { estimateManaValue } from '../lib/mana'
 import ManaCost from '../components/ManaCost'
-import { downloadBlob, exportDeckImage } from '../lib/deckImage'
+import { exportDeckImage } from '../lib/deckImage'
+import ShareImagePanel from '../components/ShareImagePanel'
 import { imageVariants, scryfallPrintUrl } from '../lib/cardArt'
 import { customDeckToServerDeck, editorPathOf, findLocalDeck, isLocalDeckId, localDeckId, saveServerDeck } from '../lib/localDeck'
 import { enrichCards, type CardMeta } from '../lib/enrich'
@@ -36,7 +37,8 @@ export default function DeckDetailPage() {
   // 分享图分两阶段：先找图（网络 probe），再绘制。分开显示进度，用户才知道卡在哪一步
   const [phase, setPhase] = useState<'art' | 'draw' | null>(null)
   const abortRef = useRef<AbortController | null>(null)
-  const [preview, setPreview] = useState<string | null>(null)
+  // 生成结果：交给 ShareImagePanel 展示预览 + 保存入口（不再只是静默写盘）
+  const [shot, setShot] = useState<{ blob: Blob; ext: string; name: string } | null>(null)
   const [flipped, setFlipped] = useState<Record<string, boolean>>({})
   const [tab, setTab] = useState<Tab>('list')
   const [similar, setSimilar] = useState<ServerDeck[]>([])
@@ -177,8 +179,7 @@ export default function DeckDetailPage() {
         onProgress: (d, t) => setProgress([d, t]),
         signal: ctrl.signal,
       })
-      setPreview(URL.createObjectURL(res.blob))
-      downloadBlob(res.blob, deck.deck_name, 'deck', res.ext)
+      setShot({ blob: res.blob, ext: res.ext, name: deck.deck_name })
       if (res.missing > 0) setError(`${res.missing} 张卡图缺失，已用占位替代`)
     } catch (e) {
       const err = e as Error
@@ -258,14 +259,13 @@ export default function DeckDetailPage() {
         </div>
       )}
 
-      {preview && (
-        <div className="card" style={{ marginBottom: 14 }}>
-          <div className="row spread" style={{ marginBottom: 8 }}>
-            <strong>分享图预览</strong>
-            <button onClick={() => setPreview(null)}>关闭</button>
-          </div>
-          <img src={preview} alt="分享图" style={{ width: '100%', borderRadius: 6, display: 'block' }} />
-        </div>
+      {shot && (
+        <ShareImagePanel
+          blob={shot.blob}
+          ext={shot.ext}
+          name={shot.name}
+          onClose={() => setShot(null)}
+        />
       )}
 
       <div className="row wrap" style={{ marginBottom: 12 }}>

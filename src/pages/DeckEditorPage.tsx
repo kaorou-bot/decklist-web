@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deckToText, parseDeckText, type ImportedCard } from '../lib/deckImport'
 import { deckTotals, loadDecks, newDeckId, saveDecks, type CustomDeck } from '../lib/storage'
-import { downloadBlob, exportDeckImage } from '../lib/deckImage'
+import { exportDeckImage } from '../lib/deckImage'
+import ShareImagePanel from '../components/ShareImagePanel'
 import { artCandidatesByName } from '../lib/cardArt'
 import { enrichCards, type CardMeta } from '../lib/enrich'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
@@ -24,6 +25,7 @@ export default function DeckEditorPage() {
   const [tab, setTab] = useState<Tab>('edit')
   const [meta, setMeta] = useState<Record<string, CardMeta>>({})
   const [enriching, setEnriching] = useState(false)
+  const [shot, setShot] = useState<{ blob: Blob; ext: string; name: string } | null>(null)
 
   // 新建时接住「存入套牌集」带来的待导入内容
   useEffect(() => {
@@ -147,7 +149,7 @@ export default function DeckEditorPage() {
         subtitle: [format, player].filter(Boolean).join('  ·  '),
         cards,
       })
-      downloadBlob(res.blob, name.trim(), 'deck', res.ext)
+      setShot({ blob: res.blob, ext: res.ext, name: name.trim() || '未命名套牌' })
     } catch (e) {
       setError(String((e as Error).message ?? e))
     } finally {
@@ -171,6 +173,14 @@ export default function DeckEditorPage() {
       </div>
 
       {error && <div className="error">{error}</div>}
+      {shot && (
+        <ShareImagePanel
+          blob={shot.blob}
+          ext={shot.ext}
+          name={shot.name}
+          onClose={() => setShot(null)}
+        />
+      )}
 
       {tab === 'stats' && <DeckStatsView cards={statCards} enriching={enriching} />}
 

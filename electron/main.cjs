@@ -7,7 +7,7 @@
  * 2. asar 打包后 dist 位于 app.asar/dist，Electron 已 patch 过 fs，可直接读。
  * 3. 单实例锁定，重复启动只激活已有窗口。
  */
-const { app, BrowserWindow, Menu, shell, dialog, session, ipcMain } = require('electron')
+const { app, BrowserWindow, Menu, shell, dialog, session, ipcMain, clipboard, nativeImage } = require('electron')
 const http = require('node:http')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -194,22 +194,88 @@ async function bindServer(root) {
 //
 // 不用浏览器的 `<a download>`：实测 Electron 的下载通道会把整个应用卡住
 // （界面不动、DevTools 也不再应答）。改成渲染进程把 base64 发过来、主进程直接写盘。
+/**
+ * 默认保存目录：
+ * - 便携版：electron-builder 会注入 PORTABLE_EXECUTABLE_DIR，就把图存到 exe 所在目录下的
+ *   「分享图」子文件夹——用户放程序的那个文件夹里直接能看到，符合"便携"的直觉；
+ * - 安装版 / 开发环境：系统「下载」文件夹。
+ * 便携版若写不进去（程序放在只读目录等），自动退回「下载」文件夹。
+ */
+function defaultSaveDir() {
+  const portable = process.env.PORTABLE_EXECUTABLE_DIR
+  if (portable) return { dir: path.join(portable, '分享图'), portable: true }
+  return { dir: app.getPath('downloads'), portable: false }
+}
+
 ipcMain.handle('dlw:save-image', async (_e, payload) => {
   const base64 = payload && payload.base64
   const rawName = (payload && payload.filename) || 'deck.jpg'
   if (typeof base64 !== 'string' || !base64) return { ok: false, error: '没有图片数据' }
   const safe = rawName.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'deck.jpg'
-  const dir = app.getPath('downloads')
-  let target = path.join(dir, safe)
+  const pref = defaultSaveDir()
+  const dirs = pref.portable ? [pref.dir, app.getPath('downloads')] : [pref.dir]
+  const buf = Buffer.from(base64, 'base64')
+  let lastErr = null
+  for (const dir of dirs) {
+    let target = path.join(dir, safe)
+    try {
+      let n = 1
+      const dot = safe.lastIndexOf('.')
+      const stem = dot > 0 ? safe.slice(0, dot) : safe
+      const ext = dot > 0 ? safe.slice(dot) : ''
+      while (fs.existsSync(target) && n < 100) target = path.join(dir, `${stem} (${n++})${ext}`)
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(target, buf)
+      return { ok: true, path: target }
+    } catch (err) {
+      lastErr = err
+    }
+  }
+  return { ok: false, error: String((lastErr && lastErr.message) || lastErr) }
+})
+
+/**
+ * 复制图片到系统剪贴板。
+ * 分享图最常见的去向就是微信 / QQ，与其让用户去下载目录翻文件，不如直接可粘贴。
+ */
+ipcMain.handle('dlw:copy-image', async (_e, payload) => {
+  const base64 = payload && payload.base64
+  if (typeof base64 !== 'string' || !base64) return { ok: false, error: '没有图片数据' }
+  const buf = Buffer.from(base64, 'base64')
   try {
-    let n = 1
-    const dot = safe.lastIndexOf('.')
-    const stem = dot > 0 ? safe.slice(0, dot) : safe
-    const ext = dot > 0 ? safe.slice(dot) : ''
-    while (fs.existsSync(target) && n < 100) target = path.join(dir, `${stem} (${n++})${ext}`)
-    fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(target, Buffer.from(base64, 'base64'))
-    return { ok: true, path: target }
+    let img = nativeImage.createFromBuffer(buf)
+    // 兜底：个别环境按内存缓冲解码会返回空图，落盘后再按路径解码一次
+    if (img.isEmpty()) {
+      const tmp = path.join(app.getPath('temp'), `dlw-clip-${Date.now()}.jpg`)
+      fs.writeFileSync(tmp, buf)
+      img = nativeImage.createFromPath(tmp)
+      fs.promises.unlink(tmp).catch(() => {})
+    }
+    if (img.isEmpty()) return { ok: false, error: '图片解码失败' }
+    clipboard.writeImage(img)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) }
+  }
+})
+
+/** 在文件管理器里选中刚保存的图片（用户最想要的"东西存哪了"的入口） */
+ipcMain.handle('dlw:show-item', async (_e, payload) => {
+  const target = payload && payload.path
+  if (typeof target !== 'string' || !target) return { ok: false, error: '没有文件路径' }
+  try {
+    shell.showItemInFolder(target)
+    return { ok: true }
+  } catch (err) {
+    return { ok: false, error: String((err && err.message) || err) }
+  }
+})
+
+/** 默认保存目录，界面上展示给用户 */
+ipcMain.handle('dlw:downloads-dir', async () => {
+  try {
+    const { dir, portable } = defaultSaveDir()
+    return { ok: true, dir, portable }
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) }
   }

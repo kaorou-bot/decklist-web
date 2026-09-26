@@ -354,6 +354,9 @@ export function showToast(msg: string) {
 /** 桌面壳注入的保存接口（见 electron/preload.cjs） */
 interface DesktopBridge {
   saveImage?: (p: { base64: string; filename: string }) => Promise<{ ok: boolean; path?: string; error?: string }>
+  copyImage?: (p: { base64: string }) => Promise<{ ok: boolean; error?: string }>
+  showItem?: (p: { path: string }) => Promise<{ ok: boolean; error?: string }>
+  downloadsDir?: () => Promise<{ ok: boolean; dir?: string; portable?: boolean; error?: string }>
 }
 
 function desktopBridge(): DesktopBridge | null {
@@ -409,4 +412,47 @@ export async function downloadBlob(
   a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
   return null
+}
+
+/** 是否跑在桌面壳里并且拿到了写盘通道 */
+export function hasDesktopBridge(): boolean {
+  return !!desktopBridge()?.saveImage
+}
+
+/** 桌面端默认保存目录，用于在界面上告诉用户文件会存到哪 */
+export async function defaultSaveDir(): Promise<{ dir: string; portable: boolean } | null> {
+  const bridge = desktopBridge()
+  if (!bridge?.downloadsDir) return null
+  try {
+    const res = await bridge.downloadsDir()
+    if (!res?.ok || !res.dir) return null
+    return { dir: res.dir, portable: !!res.portable }
+  } catch {
+    return null
+  }
+}
+
+/** 复制图片到系统剪贴板（可直接粘到微信 / QQ）。仅桌面端可用 */
+export async function copyImageToClipboard(blob: Blob): Promise<{ ok: boolean; error?: string }> {
+  const bridge = desktopBridge()
+  if (!bridge?.copyImage) return { ok: false, error: '当前环境不支持复制（仅桌面端可用）' }
+  try {
+    const base64 = await blobToBase64(blob)
+    const res = await bridge.copyImage({ base64 })
+    return res?.ok ? { ok: true } : { ok: false, error: res?.error || '复制失败' }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+/** 在文件管理器里选中已保存的图片 */
+export async function revealPath(target: string): Promise<boolean> {
+  const bridge = desktopBridge()
+  if (!bridge?.showItem) return false
+  try {
+    const res = await bridge.showItem({ path: target })
+    return !!res?.ok
+  } catch {
+    return false
+  }
 }

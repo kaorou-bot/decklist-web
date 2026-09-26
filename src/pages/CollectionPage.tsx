@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { deckTotals, loadDecks, saveDecks, type CustomDeck } from '../lib/storage'
-import { downloadBlob, exportDeckImage } from '../lib/deckImage'
+import { exportDeckImage } from '../lib/deckImage'
+import ShareImagePanel from '../components/ShareImagePanel'
 import { artCandidatesByName } from '../lib/cardArt'
 import { detailPathOf, editorPathOf } from '../lib/localDeck'
 
@@ -9,6 +10,7 @@ export default function CollectionPage() {
   const [decks, setDecks] = useState<CustomDeck[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
+  const [shot, setShot] = useState<{ blob: Blob; ext: string; name: string } | null>(null)
   const nav = useNavigate()
 
   useEffect(() => setDecks(loadDecks()), [])
@@ -39,7 +41,7 @@ export default function CollectionPage() {
         subtitle: [d.format, d.player, `主牌 ${t.main}${t.side ? ` · 备牌 ${t.side}` : ''}`].filter(Boolean).join('  ·  '),
         cards: withImages,
       })
-      downloadBlob(res.blob, d.name, 'deck', res.ext)
+      setShot({ blob: res.blob, ext: res.ext, name: d.name })
       if (res.missing > 0) setError(`${res.missing} 张卡图缺失，已用占位替代`)
     } catch (e) {
       setError(String((e as Error).message ?? e))
@@ -61,6 +63,14 @@ export default function CollectionPage() {
       </div>
 
       {error && <div className="error">{error}</div>}
+      {shot && (
+        <ShareImagePanel
+          blob={shot.blob}
+          ext={shot.ext}
+          name={shot.name}
+          onClose={() => setShot(null)}
+        />
+      )}
 
       {decks.length === 0 ? (
         <div className="empty">
