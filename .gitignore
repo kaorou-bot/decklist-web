@@ -7,3 +7,4 @@ scripts/_out_*.txt
 .DS_Store
 *.local
 .vite
+scripts/_md_*.md
