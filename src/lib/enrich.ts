@@ -10,6 +10,7 @@
 
 import { api, cardImageUrl } from '../api/client'
 import type { ForgeCard } from '../api/types'
+import { pickBestCard } from './printings'
 
 export interface CardMeta {
   cardId?: string | null
@@ -31,8 +32,9 @@ async function one(name: string): Promise<CardMeta | null> {
   const hit = await api.cardSearch({ q: name, pageSize: 5 })
   const items = hit.items ?? []
   if (items.length === 0) return null
+  // 同名记录里混着「改名异画」（酸液黏菌 → Marauding Mutagen），优先挑本体那张
   const exact =
-    items.find((c) => c.name.toLowerCase() === name.trim().toLowerCase()) ??
+    pickBestCard(items, name) ??
     items.find((c) => (c.name_zh ?? '') === name.trim()) ??
     items[0]
   let layout = exact.layout ?? null

@@ -8,9 +8,11 @@ import { artCandidatesByName } from '../lib/cardArt'
 import { enrichCards, type CardMeta } from '../lib/enrich'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
 import PageHeader from '../components/PageHeader'
+import DeckVisualEditor from '../components/DeckVisualEditor'
 import type { StatCard } from '../lib/deckStats'
 
 type Tab = 'edit' | 'stats' | 'hand'
+type EditMode = 'visual' | 'text'
 
 export default function DeckEditorPage() {
   const { id } = useParams<{ id: string }>()
@@ -24,6 +26,7 @@ export default function DeckEditorPage() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [tab, setTab] = useState<Tab>('edit')
+  const [mode, setMode] = useState<EditMode>('visual')
   const [meta, setMeta] = useState<Record<string, CardMeta>>({})
   const [enriching, setEnriching] = useState(false)
   const [shot, setShot] = useState<{ blob: Blob; ext: string; name: string } | null>(null)
@@ -107,6 +110,12 @@ export default function DeckEditorPage() {
         : [],
     [parsed, meta],
   )
+
+  // 图形模式改完的卡组重新序列化成文本，保证「图形 / 文本」共用同一份数据
+  const applyCards = (next: ImportedCard[]) => {
+    setText(deckToText({ cards: next, name, player, format }))
+    setError(null)
+  }
 
   const save = () => {
     if (!parsed.ok) {
@@ -226,18 +235,41 @@ export default function DeckEditorPage() {
       </div>
 
       <div className="card">
-        <div className="row spread" style={{ marginBottom: 8 }}>
-          <strong>牌表</strong>
+        <div className="row spread wrap" style={{ marginBottom: 10 }}>
+          <div className="segmented">
+            <button className={mode === 'visual' ? 'on' : ''} onClick={() => setMode('visual')}>图形编辑</button>
+            <button className={mode === 'text' ? 'on' : ''} onClick={() => setMode('text')}>文本编辑</button>
+          </div>
           <span className="small muted">
-            每行「数量 牌名」· 支持 4x、SB:、备牌/主牌 标题、套牌名称/玩家/赛制
+            {mode === 'visual'
+              ? '点 −/+ 增减张数，搜索卡名可直接加入'
+              : '每行「数量 牌名」· 支持 4x、SB:、备牌/主牌 标题'}
           </span>
         </div>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          placeholder={'主牌\n4 曳物波尬\n3 幽寂\n\n备牌\n2 损耗 // 穿破'}
-          spellCheck={false}
-        />
+
+        {mode === 'visual' ? (
+          <>
+            {!parsed.ok && (
+              <div className="error" style={{ marginBottom: 10 }}>
+                牌表文本暂时无法解析（{parsed.error}）。图形模式下改动卡片会自动修正文本。
+              </div>
+            )}
+            <DeckVisualEditor
+              cards={parsed.ok ? parsed.deck.cards : []}
+              meta={meta}
+              onChange={applyCards}
+              enriching={enriching}
+            />
+          </>
+        ) : (
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder={'主牌\n4 曳物波尬\n3 幽寂\n\n备牌\n2 损耗 // 穿破'}
+            spellCheck={false}
+          />
+        )}
+
         <div className="row spread wrap" style={{ marginTop: 10 }}>
           <span className="small muted">
             {parsed.ok ? (

@@ -8,7 +8,8 @@ import { api, lookupCard } from '../api/client'
 import type { ForgeCardDetail } from '../api/types'
 import CardImage from './CardImage'
 import ManaCost from './ManaCost'
-import { printingsWithCurrent, RARITY_LABEL, type Printing } from '../lib/cardArt'
+import { RARITY_LABEL } from '../lib/cardArt'
+import { collectPrintings, type PrintingEx } from '../lib/printings'
 
 /** 一次版本选择的结果 */
 export interface VersionPick {
@@ -35,6 +36,7 @@ export default function CardVersionDialog(props: {
 }) {
   const { name, nameZh, cardId, current, original, backImageUrl, isDualFace, onPick, onClose } = props
   const [detail, setDetail] = useState<ForgeCardDetail | null>(null)
+  const [all, setAll] = useState<PrintingEx[]>([])
   const [loading, setLoading] = useState(true)
   const [showBack, setShowBack] = useState(false)
 
@@ -50,15 +52,21 @@ export default function CardVersionDialog(props: {
           id = null
         }
       }
-      if (!id) {
-        if (alive) setLoading(false)
-        return
+      if (id) {
+        try {
+          const d = await api.cardDetail(id)
+          if (alive) setDetail(d)
+        } catch {
+          /* 详情拿不到就只显示当前版本 */
+        }
       }
+      // 改名异画在服务端是独立卡记录（TMC 的「酸液黏菌」只有一个印刷），
+      // 所以按卡名把所有同名记录的印刷合并起来，才能选到正常版本
       try {
-        const d = await api.cardDetail(id)
-        if (alive) setDetail(d)
+        const list = await collectPrintings(name, id)
+        if (alive) setAll(list)
       } catch {
-        /* 详情拿不到就只显示当前版本 */
+        /* 合并失败就用详情里的列表 */
       } finally {
         if (alive) setLoading(false)
       }
@@ -68,23 +76,48 @@ export default function CardVersionDialog(props: {
     }
   }, [cardId, name])
 
-  // 版本列表：当前显示的版本排第一，其余按服务端顺序
-  const printings = useMemo<Printing[]>(() => {
-    if (detail) {
-      const list = printingsWithCurrent({
-        image_url: current?.imageUrl ?? detail.image_url,
-        set_code: current?.setCode ?? detail.set_code,
-        set_name: detail.set_name,
-        set_name_zh: current?.setNameZh ?? detail.set_name_zh,
-        collector_number: current?.collectorNumber ?? detail.collector_number,
-        rarity: current?.rarity ?? detail.rarity,
-        printings: detail.printings,
+  // 版本列表：正常版在前、改名异画在后；当前显示的版本一定在列表里
+  const printings = useMemo<PrintingEx[]>(() => {
+    const base: VersionPick | null = current ?? original ?? null
+    const merged: PrintingEx[] = [...all]
+    if (base?.imageUrl && !merged.some((p) => p.imageUrl === base.imageUrl)) {
+      merged.unshift({
+        setCode: base.setCode ?? null,
+        setName: null,
+        setNameZh: base.setNameZh ?? null,
+        collectorNumber: base.collectorNumber ?? null,
+        rarity: base.rarity ?? null,
+        imageUrl: base.imageUrl,
+        faceName: null,
+        variant: false,
       })
-      if (list.length > 0) return list
     }
-    const base = current ?? original
-    return base ? [base as Printing] : []
-  }, [detail, current, original])
+    if (merged.length > 0) return merged
+    if (detail) {
+      return [
+        {
+          setCode: detail.set_code ?? null,
+          setName: detail.set_name ?? null,
+          setNameZh: detail.set_name_zh ?? null,
+          collectorNumber: detail.collector_number ?? null,
+          rarity: detail.rarity ?? null,
+          imageUrl: detail.image_url ?? null,
+        },
+      ]
+    }
+    return base
+      ? [
+          {
+            setCode: base.setCode ?? null,
+            setName: null,
+            setNameZh: base.setNameZh ?? null,
+            collectorNumber: base.collectorNumber ?? null,
+            rarity: base.rarity ?? null,
+            imageUrl: base.imageUrl,
+          },
+        ]
+      : []
+  }, [all, detail, current, original])
 
   // 高亮到与当前显示一致的那一项（按图 URL 比对，比得上就比编号）
   const [index, setIndex] = useState(0)
@@ -161,17 +194,22 @@ export default function CardVersionDialog(props: {
               <div className="printings">
                 <div className="small muted" style={{ width: '100%' }}>
                   共 {printings.length} 个印刷版本，点击切换
+                  {printings.some((p) => p.variant) ? '（带「异画」标记的是改名异画，排在后面）' : ''}
                 </div>
                 {printings.map((p, i) => (
                   <button
                     key={`${p.setCode}-${p.collectorNumber}-${i}`}
-                    className={`printing-chip${i === Math.min(index, printings.length - 1) ? ' on' : ''}`}
+                    className={`printing-chip${i === Math.min(index, printings.length - 1) ? ' on' : ''}${p.variant ? ' variant' : ''}`}
                     onClick={() => setIndex(i)}
-                    title={`${p.setNameZh || p.setName || ''} #${p.collectorNumber ?? ''}`}
+                    title={
+                      `${p.setNameZh || p.setName || ''} #${p.collectorNumber ?? ''}` +
+                      (p.variant ? `（改名异画：${p.faceName ?? '异画'}）` : '')
+                    }
                   >
                     <strong>{p.setCode || '—'}</strong>
                     <span className="small">#{p.collectorNumber ?? '—'}</span>
                     <span className="small muted">{RARITY_LABEL[p.rarity ?? ''] ?? p.rarity ?? ''}</span>
+                    {p.variant && <span className="small variant-tag">{p.faceName ?? '异画'}</span>}
                   </button>
                 ))}
               </div>

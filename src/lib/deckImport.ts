@@ -17,8 +17,9 @@ export interface ImportedDeck {
 const MAX_CHARS = 200_000
 const MAX_LINES = 1000
 
-const RE_SIDEBOARD = /^(?:sideboard|side board|备牌)\s*[:：]?(?:\s*[（(]\d+[)）])?$/i
-const RE_MAINBOARD = /^(?:deck|maindeck|mainboard|main deck|主牌|套牌)\s*[:：]?(?:\s*[（(]\d+[)）])?$/i
+// 分节行允许带张数，因为 deckToText 与自己导出的牌表会长成「主牌 60 / 备牌 15」
+const RE_SIDEBOARD = /^(?:sideboard|side board|备牌)\s*[:：]?(?:\s*[（(]\d+[)）])?(?:\s+\d+)?$/i
+const RE_MAINBOARD = /^(?:deck|maindeck|mainboard|main deck|主牌|套牌)\s*[:：]?(?:\s*[（(]\d+[)）])?(?:\s+\d+)?$/i
 const RE_NAME = /^(?:套牌名称|name|deck name)\s*[:：]\s*(.*)$/i
 const RE_PLAYER = /^(?:玩家|使用人|player)\s*[:：]\s*(.*)$/i
 const RE_FORMAT = /^(?:赛制|format)\s*[:：]\s*(.*)$/i

@@ -906,3 +906,140 @@ textarea {
   box-shadow: var(--shadow);
   display: block;
 }
+
+/* 印刷版本：改名异画标记 */
+.printing-chip.variant {
+  opacity: 0.85;
+}
+.variant-tag {
+  color: var(--gold);
+  font-size: 11px;
+  line-height: 1.1;
+}
+
+/* 图形化牌表编辑 */
+.ve-add {
+  padding: 12px 14px;
+}
+.ve-search {
+  flex: 1;
+  min-width: 200px;
+}
+.ve-results {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 10px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.ve-result {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+}
+.ve-result:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ve-result-thumb {
+  width: 34px;
+  height: 47px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--surface-2);
+  flex-shrink: 0;
+  display: block;
+}
+.ve-result-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.ve-result-text strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+.ve-result-side {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.ve-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 10px;
+}
+.ve-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.ve-thumb {
+  width: 52px;
+  height: 73px;
+  border-radius: 5px;
+  object-fit: cover;
+  background: var(--surface-2);
+  flex-shrink: 0;
+  display: block;
+}
+.ve-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ve-name {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.3;
+  word-break: break-word;
+}
+.ve-sub {
+  line-height: 1.2;
+  word-break: break-word;
+}
+.ve-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ve-row-actions {
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.ve-step {
+  width: 28px;
+  height: 26px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.ve-qty {
+  min-width: 22px;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ve-mini {
+  padding: 3px 8px;
+  font-size: 12px;
+}
+.ve-mini.danger {
+  color: var(--danger);
+}

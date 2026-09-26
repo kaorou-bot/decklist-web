@@ -10,6 +10,7 @@ import type {
   SimilarDeckPage,
   UsageSnapshot,
 } from './types'
+import { pickBestCard } from '../lib/printings'
 
 export const API_BASE = 'https://play.mtg-forge-kaorou.vip:8443/api/v1'
 
@@ -101,8 +102,8 @@ export async function lookupCard(name: string, signal?: AbortSignal): Promise<Fo
     const res = await api.cardSearch({ q: name, pageSize: 5 }, signal)
     const list = res.items ?? []
     if (list.length === 0) return null
-    const exact = list.find((c) => c.name.toLowerCase() === name.trim().toLowerCase())
-    return exact ?? list[0]
+    // 同名里可能有「改名异画」（酸液黏菌 → Marauding Mutagen），优先挑本体
+    return pickBestCard(list, name)
   } catch {
     return null
   }
