@@ -14,7 +14,9 @@
     "icon": "python scripts/make_icon.py",
     "app": "npm run build && electron .",
     "dist:dir": "npm run build && electron-builder --win --dir",
-    "dist:win": "npm run build && electron-builder --win --x64"
+    "dist:win": "npm run build && electron-builder --win --x64",
+    "notify": "node scripts/notify-wecom.cjs --latest",
+    "release:notify": "npm run dist:win && npm run notify"
   },
   "dependencies": {
     "react": "^18.3.1",
