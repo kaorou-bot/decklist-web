@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
-import type { ServerDeck } from '../api/types'
+import type { ServerDeck, ServerRepresentativeCard } from '../api/types'
 import { deckToEvent } from '../api/types'
 import { useFormats } from '../lib/formats'
+import CardImage from '../components/CardImage'
 
 interface EventGroup {
   id: string
@@ -11,7 +12,7 @@ interface EventGroup {
   date: string
   format: string
   deckCount: number | null
-  cover: string | null
+  cover: ServerRepresentativeCard | null
   decks: ServerDeck[]
 }
 
@@ -70,7 +71,7 @@ export default function EventsPage() {
           date: ev.date,
           format: ev.format,
           deckCount: ev.deckCount,
-          cover: ev.representativeCard?.image_url ?? null,
+          cover: ev.representativeCard ?? null,
           decks: [],
         }
         map.set(ev.id, g)
@@ -120,7 +121,19 @@ export default function EventsPage() {
                   {ev.deckCount != null ? ` · ${ev.deckCount} 副` : ` · ${ev.decks.length} 副`}
                 </div>
               </div>
-              {ev.cover && <img src={ev.cover} alt="" style={{ height: 64, borderRadius: 6 }} />}
+              {ev.cover && (
+                <CardImage
+                  source={{
+                    url: ev.cover.image_url,
+                    cardId: ev.cover.card_id,
+                    name: ev.cover.name,
+                  }}
+                  placeholder={null}
+                  alt=""
+                  lazy={false}
+                  className="event-cover"
+                />
+              )}
             </div>
             <div className="grid">
               {ev.decks.map((d) => (

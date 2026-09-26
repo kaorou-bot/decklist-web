@@ -622,3 +622,48 @@ textarea {
   background: var(--accent);
   color: #fff;
 }
+
+/* 卡图占位（回退链全部失败时） */
+.img-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #eceef1;
+  color: var(--text-sub);
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.2;
+  overflow: hidden;
+}
+.event-cover {
+  height: 64px;
+  width: auto;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+/* 印刷版本切换 */
+.printings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.printing-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  line-height: 1.25;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.printing-chip.on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+.printing-chip strong {
+  font-size: 12px;
+}

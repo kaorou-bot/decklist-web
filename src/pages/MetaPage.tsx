@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import type { UsageCard, UsageSnapshot } from '../api/types'
+import CardImage from '../components/CardImage'
 
 const WINDOWS = [
   { value: 7, label: '近 7 天 · Top 10' },
@@ -135,11 +136,15 @@ function UsageRow({ card, max }: { card: UsageCard; max: number }) {
   return (
     <div className="usage-row">
       <span className="usage-rank">{card.rank}</span>
-      {card.image_url ? (
-        <img className="card-thumb" src={card.image_url} alt="" loading="lazy" />
-      ) : (
-        <div className="card-thumb" style={{ background: '#dfe3e8' }} />
-      )}
+      <CardImage
+        className="card-thumb"
+        source={{
+          url: card.image_url,
+          cardId: card.card_id,
+          name: card.name,
+        }}
+        placeholder={<span className="small muted">无图</span>}
+      />
       <div className="usage-main">
         <div className="usage-name">
           {card.name_zh || card.name}

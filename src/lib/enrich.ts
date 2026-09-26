@@ -12,6 +12,9 @@ import { api, cardImageUrl } from '../api/client'
 import type { ForgeCard } from '../api/types'
 
 export interface CardMeta {
+  cardId?: string | null
+  setCode?: string | null
+  collectorNumber?: string | null
   manaCost?: string | null
   manaValue?: number | null
   layout?: string | null
@@ -53,6 +56,9 @@ export function toMeta(c: ForgeCard, layoutOverride?: string | null): CardMeta {
     imageUrl: f.image_url ?? undefined,
   }))
   return {
+    cardId: c.id ?? null,
+    setCode: c.set_code ?? null,
+    collectorNumber: c.collector_number ?? null,
     manaCost: c.mana_cost ?? null,
     manaValue: c.mana_value ?? null,
     layout: layoutOverride ?? c.layout ?? null,

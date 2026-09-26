@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { deckTotals, loadDecks, saveDecks, type CustomDeck } from '../lib/storage'
 import { downloadBlob, exportDeckImage } from '../lib/deckImage'
-import { resolveArt } from '../lib/cardArt'
+import { resolveArtForImages } from '../lib/cardArt'
 
 export default function CollectionPage() {
   const [decks, setDecks] = useState<CustomDeck[]>([])
@@ -23,8 +23,8 @@ export default function CollectionPage() {
     setBusy(d.id)
     setError(null)
     try {
-      // 分享图需 Canvas 导出，卡图必须走带 CORS 的 Scryfall
-      const art = await resolveArt(d.cards.map((c) => c.name))
+      // 自定义套牌只有卡名，先回查 Forge 拿 URL，再按回退链 probe 出真正可用的图
+      const art = await resolveArtForImages(d.cards.map((c) => ({ name: c.name })))
       const withImages = d.cards.map((c) => ({
         name: c.name,
         quantity: c.quantity,

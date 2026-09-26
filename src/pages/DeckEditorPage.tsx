@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { deckToText, parseDeckText, type ImportedCard } from '../lib/deckImport'
 import { deckTotals, loadDecks, newDeckId, saveDecks, type CustomDeck } from '../lib/storage'
 import { downloadBlob, exportDeckImage } from '../lib/deckImage'
-import { resolveArt } from '../lib/cardArt'
+import { resolveArtForImages } from '../lib/cardArt'
 import { enrichCards, type CardMeta } from '../lib/enrich'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
 import type { StatCard } from '../lib/deckStats'
@@ -134,7 +134,7 @@ export default function DeckEditorPage() {
     if (!parsed.ok) return setError(parsed.error)
     setBusy(true)
     try {
-      const art = await resolveArt(parsed.deck.cards.map((c) => c.name))
+      const art = await resolveArtForImages(parsed.deck.cards.map((c) => ({ name: c.name })))
       const cards = parsed.deck.cards.map((c) => ({
         name: c.name,
         quantity: c.quantity,

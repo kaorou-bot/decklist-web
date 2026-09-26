@@ -6,6 +6,7 @@ import {
 } from '../lib/deckStats'
 import { drawOpeningHand } from '../lib/simulate'
 import type { CardMeta } from '../lib/enrich'
+import CardImage from './CardImage'
 
 const COLOR_FILL: Record<string, string> = {
   W: '#f4ecd2',
@@ -196,7 +197,16 @@ export function OpeningHandView({
             return (
               <div key={`${c.name}-${i}`} className="hand-card">
                 <div className="hand-img">
-                  {img ? <img src={img} alt="" loading="lazy" /> : <span className="small muted">无卡图</span>}
+                  <CardImage
+                    source={{
+                      url: img,
+                      name: c.name,
+                      cardId: m?.cardId ?? null,
+                      setCode: m?.setCode ?? null,
+                      collectorNumber: m?.collectorNumber ?? null,
+                    }}
+                    placeholder={<span className="small muted">无卡图</span>}
+                  />
                 </div>
                 <div className="hand-name small">{c.nameZh || m?.nameZh || c.name}</div>
               </div>

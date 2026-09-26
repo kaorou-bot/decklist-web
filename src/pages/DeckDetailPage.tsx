@@ -7,8 +7,9 @@ import { estimateManaValue } from '../lib/mana'
 import ManaCost from '../components/ManaCost'
 import { downloadBlob, exportDeckImage } from '../lib/deckImage'
 import { parseDeckText } from '../lib/deckImport'
-import { resolveArt } from '../lib/cardArt'
+import { resolveArtForImages } from '../lib/cardArt'
 import { enrichCards, type CardMeta } from '../lib/enrich'
+import CardImage from '../components/CardImage'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
 import type { StatCard } from '../lib/deckStats'
 
@@ -123,10 +124,16 @@ export default function DeckDetailPage() {
     setProgress(null)
     setError(null)
     try {
-      // 分享图：Forge 图床已开放 CORS（2026-09-26），优先直接用 image_url，
-      // 没图的卡回退 Scryfall
-      const art = await resolveArt(
-        sorted.map((r) => ({ name: r.name, forgeUrl: r.image_url })),
+      // 分享图前先 probe：图床存在「有 URL 但文件缺失」的情况
+      // （如惨痛胜利指向 Bitter%20Triumph3.fullborder.jpg → 404），
+      // resolveArtForImages 会按「命名变体 → 其它印刷 → Scryfall」逐级找可用图，
+      // 并以 crossOrigin=anonymous 验证，保证 Canvas 不被污染。
+      const art = await resolveArtForImages(
+        sorted.map((r) => ({
+          name: r.name,
+          url: r.image_url ?? r.meta?.imageUrl ?? null,
+          cardId: r.card_id ?? null,
+        })),
         (d, t) => setProgress([d, t]),
       )
       const parts = [
@@ -323,7 +330,18 @@ function CardSection({
           const faces = r.meta?.faces
           return (
             <div key={`${r.name}-${i}`} className="card-row">
-              {img && <img className="card-thumb" src={img} alt="" loading="lazy" />}
+              <CardImage
+                className="card-thumb"
+                source={{
+                  url: img,
+                  cardId: r.meta?.cardId ?? r.card_id ?? null,
+                  setCode: r.meta?.setCode ?? null,
+                  collectorNumber: r.meta?.collectorNumber ?? null,
+                  name: r.name,
+                  isBack: showBack,
+                }}
+                placeholder={<span className="small muted">无图</span>}
+              />
               <span className="qty">{r.quantity}×</span>
               <div className="card-name">
                 <div>{r.name_zh || r.name}</div>

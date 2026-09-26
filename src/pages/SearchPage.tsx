@@ -20,6 +20,8 @@ import {
   type ForgeSet,
 } from '../api/types'
 import ManaCost from '../components/ManaCost'
+import CardImage from '../components/CardImage'
+import { printingsWithCurrent, RARITY_LABEL, type Printing } from '../lib/cardArt'
 
 interface Filters {
   q: string
@@ -59,7 +61,20 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [detail, setDetail] = useState<ForgeCardDetail | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [showFilters, setShowFilters] = useState(true)
+
+  const openCard = async (id: string) => {
+    setDetailLoading(true)
+    try {
+      const d = await api.cardDetail(id)
+      setDetail(d)
+    } catch {
+      /* 详情拉取失败就保持列表 */
+    } finally {
+      setDetailLoading(false)
+    }
+  }
 
   useEffect(() => {
     api
@@ -186,6 +201,7 @@ export default function SearchPage() {
         </div>
         <div className="row small muted">
           {loading && <span className="spinner" />}
+          {detailLoading && <span>打开详情中…</span>}
           <span>{hasQuery ? `共 ${total} 张` : '输入关键词或选择筛选条件'}</span>
         </div>
       </div>
@@ -303,12 +319,18 @@ export default function SearchPage() {
 
       <div className="card-grid">
         {items.map((c) => (
-          <button key={c.id} className="search-card" onClick={() => api.cardDetail(c.id).then(setDetail).catch(() => {})}>
-            {c.image_url ? (
-              <img className="search-card-img" src={c.image_url} alt="" loading="lazy" />
-            ) : (
-              <div className="search-card-img placeholder small muted">暂无卡图</div>
-            )}
+          <button key={c.id} className="search-card" onClick={() => openCard(c.id)}>
+          <CardImage
+            className="search-card-img"
+            source={{
+              url: c.image_url,
+              cardId: c.id,
+              name: c.name,
+              setCode: c.set_code,
+              collectorNumber: c.collector_number,
+            }}
+            placeholder={<span className="small muted">暂无卡图</span>}
+          />
             <div className="search-card-body">
               <div className="search-card-title">{c.name_zh || c.name}</div>
               {c.name_zh && <div className="small muted ellipsis">{c.name}</div>}
@@ -345,11 +367,26 @@ export default function SearchPage() {
 }
 
 function CardDialog({ card, onClose }: { card: ForgeCardDetail; onClose: () => void }) {
+  // 印刷版本切换：当前版本 + 详情里的其它印刷（取材来源于 GET /cards/{id}.printings）
+  const printings = useMemo<Printing[]>(() => printingsWithCurrent(card), [card])
+  const [index, setIndex] = useState(0)
+  const current = printings[Math.min(index, printings.length - 1)] ?? null
+
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-body">
-          {card.image_url && <img className="modal-art" src={card.image_url} alt="" />}
+          <CardImage
+            className="modal-art"
+            source={{
+              url: current?.imageUrl ?? card.image_url,
+              cardId: card.id,
+              name: card.name,
+              setCode: current?.setCode,
+              collectorNumber: current?.collectorNumber,
+            }}
+            placeholder={<span className="small muted">无卡图</span>}
+          />
           <div className="modal-info">
             <h2 className="section-title" style={{ fontSize: 18 }}>{card.name_zh || card.name}</h2>
             <div className="small muted">{card.name}</div>
@@ -367,11 +404,34 @@ function CardDialog({ card, onClose }: { card: ForgeCardDetail; onClose: () => v
               </div>
             )}
             {card.loyalty && <div className="small">忠诚：{card.loyalty}</div>}
+
             <div className="small muted" style={{ marginTop: 6 }}>
-              {card.set_name_zh || card.set_name}
-              {card.set_code ? `（${card.set_code}）` : ''}
-              {card.collector_number ? ` · #${card.collector_number}` : ''}
+              {current?.setNameZh || current?.setName || card.set_name_zh || card.set_name}
+              {current?.setCode ? `（${current.setCode}）` : ''}
+              {current?.collectorNumber ? ` · #${current.collectorNumber}` : ''}
+              {current?.rarity ? ` · ${RARITY_LABEL[current.rarity] ?? current.rarity}` : ''}
             </div>
+
+            {printings.length > 1 && (
+              <div className="printings">
+                <div className="small muted" style={{ width: '100%' }}>
+                  共 {printings.length} 个印刷版本，点击切换
+                </div>
+                {printings.map((p, i) => (
+                  <button
+                    key={`${p.setCode}-${p.collectorNumber}-${i}`}
+                    className={`printing-chip${i === Math.min(index, printings.length - 1) ? ' on' : ''}`}
+                    onClick={() => setIndex(i)}
+                    title={`${p.setName ?? ''} #${p.collectorNumber ?? ''}`}
+                  >
+                    <strong>{p.setCode || '—'}</strong>
+                    <span className="small">#{p.collectorNumber ?? '—'}</span>
+                    <span className="small muted">{RARITY_LABEL[p.rarity ?? ''] ?? p.rarity ?? ''}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="row" style={{ marginTop: 10 }}>
               <button onClick={onClose}>关闭</button>
             </div>
