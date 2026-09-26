@@ -56,8 +56,8 @@ const MIME = {
   '.map': 'application/json; charset=utf-8',
 }
 
-/** 启动静态服务器，返回实际监听端口 */
-function serveDist(root) {
+/** 在指定端口启动静态服务器 */
+function serveDist(root, port) {
   const server = http.createServer((req, res) => {
     let rel = decodeURIComponent((req.url || '/').split('?')[0])
     if (rel === '/' || rel === '') rel = '/index.html'
@@ -92,9 +92,41 @@ function serveDist(root) {
   })
   return new Promise((resolve, reject) => {
     server.on('error', reject)
-    // 端口 0 = 由系统分配空闲端口
-    server.listen(0, '127.0.0.1', () => resolve({ server, port: server.address().port }))
+    server.listen(port, '127.0.0.1', () => resolve(server))
   })
+}
+
+/**
+ * 选择监听端口。localStorage 按 origin（含端口）隔离，端口必须**跨启动稳定**，
+ * 否则套牌集每次重启都会"丢"。优先复用上次用的端口，其次默认 21517，再往后顺延。
+ */
+async function bindServer(root) {
+  const portFile = path.join(app.getPath('userData'), 'serve-port.txt')
+  const candidates = []
+  try {
+    const saved = Number(fs.readFileSync(portFile, 'utf8').trim())
+    if (Number.isInteger(saved) && saved >= 1024 && saved <= 65535) candidates.push(saved)
+  } catch {
+    /* 首次启动没有记录 */
+  }
+  candidates.push(21517)
+  for (let p = 21518; p <= 21650; p++) candidates.push(p)
+  for (const port of candidates) {
+    try {
+      const server = await serveDist(root, port)
+      try {
+        fs.writeFileSync(portFile, String(port))
+      } catch {
+        /* 写不进去也无所谓，只是下次换个端口 */
+      }
+      return { server, port }
+    } catch {
+      /* 端口被占用，试下一个 */
+    }
+  }
+  // 理论上到不了这里；实在不行退回随机端口（localStorage 会随端口失效，但应用可用）
+  const server = await serveDist(root, 0)
+  return { server, port: server.address().port }
 }
 
 // ---- 窗口 --------------------------------------------------------------
@@ -186,10 +218,16 @@ function createWindow(url) {
     }
   })
 
-  // 分享图导出走 blob 下载，给一个默认落到「下载」目录的行为（Electron 默认已会询问）
+  // 分享图等下载：弹「另存为」对话框（静默保存没有反馈，像是坏了）。
+  // 套牌名可能带 / 等非法文件名字符（如 "4/5C Control"），必须净化，否则保存静默失败。
   mainWindow.webContents.session.on('will-download', (_e, item) => {
-    const name = item.getFilename()
-    if (name) item.setSavePath(path.join(app.getPath('downloads'), name))
+    const raw = item.getSuggestedFilename() || 'deck.png'
+    const safe = raw.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'deck.png'
+    item.setSaveDialogOptions({
+      title: '保存图片',
+      defaultPath: path.join(app.getPath('downloads'), safe),
+      filters: [{ name: '图片', extensions: ['png'] }],
+    })
   })
 
   mainWindow.loadURL(url)
@@ -226,9 +264,11 @@ if (!gotLock) {
     buildMenu()
 
     let httpServer = null
+    let port = null
     try {
-      const { server, port } = await serveDist(root)
-      httpServer = server
+      const bound = await bindServer(root)
+      httpServer = bound.server
+      port = bound.port
       createWindow(`http://127.0.0.1:${port}/index.html`)
     } catch (err) {
       dialog.showErrorBox('启动失败', `本地服务启动失败：${err && err.message ? err.message : err}`)
@@ -242,7 +282,7 @@ if (!gotLock) {
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0 && httpServer) {
-        createWindow(`http://127.0.0.1:${httpServer.address().port}/index.html`)
+        createWindow(`http://127.0.0.1:${port}/index.html`)
       }
     })
   })

@@ -146,7 +146,7 @@ export default function DeckEditorPage() {
         subtitle: [format, player].filter(Boolean).join('  ·  '),
         cards,
       })
-      downloadBlob(res.blob, `${name.trim() || 'deck'}.png`)
+      downloadBlob(res.blob, name.trim(), 'deck')
     } catch (e) {
       setError(String((e as Error).message ?? e))
     } finally {

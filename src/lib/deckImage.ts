@@ -223,7 +223,14 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath()
 }
 
-export function downloadBlob(blob: Blob, filename: string) {
+/** Windows 文件名非法字符（套牌名常含 "4/5C Control" 这类斜杠） */
+function safeFilename(name: string, fallback: string): string {
+  const cleaned = name.replace(/[\\/:*?"<>|]+/g, '_').trim()
+  return cleaned || fallback
+}
+
+export function downloadBlob(blob: Blob, rawName: string, fallback = 'deck') {
+  const filename = `${safeFilename(rawName, fallback)}.png`
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url

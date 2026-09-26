@@ -7,6 +7,8 @@ export interface CustomDeck {
   format?: string
   cards: ImportedCard[]
   representative?: string // 代表单卡名（用于封面）
+  /** 来自哪副服务器套牌（赛事套牌存入套牌集时记录，用于去重） */
+  sourceDeckId?: string
   createdAt: number
   updatedAt: number
 }

@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ServerDeck, ServerRepresentativeCard } from '../api/types'
 import { deckToEvent } from '../api/types'
 import { useFormats } from '../lib/formats'
 import CardImage from '../components/CardImage'
+import { saveServerDeck, savedServerDeckIds } from '../lib/localDeck'
 
 interface EventGroup {
   id: string
@@ -18,6 +19,7 @@ interface EventGroup {
 
 export default function EventsPage() {
   const { formats, defaultFormat } = useFormats()
+  const nav = useNavigate()
   const [format, setFormat] = useState<string>('')
   const [decks, setDecks] = useState<ServerDeck[]>([])
   const [page, setPage] = useState(1)
@@ -25,6 +27,34 @@ export default function EventsPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
+  // 已存进套牌集的服务器套牌 id，「存入套牌集」按钮据此变成已存状态
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    setSavedIds(savedServerDeckIds())
+  }, [])
+
+  const save = async (id: string) => {
+    setSavingId(id)
+    setNotice(null)
+    try {
+      // 列表接口不含完整牌表，保存前要拉一次详情
+      const detail = await api.deck(id)
+      const res = saveServerDeck(detail)
+      setSavedIds(savedServerDeckIds())
+      setNotice(
+        res.outcome === 'duplicate'
+          ? `「${res.name}」已经在套牌集里了`
+          : `已存入套牌集：${res.name}（可在「套牌集」页点开查看）`,
+      )
+    } catch (e) {
+      setNotice(`保存失败：${(e as Error).message ?? e}`)
+    } finally {
+      setSavingId(null)
+    }
+  }
 
   // 赛制列表由 useFormats 统一加载（带模块级缓存），这里只负责挑默认值
   useEffect(() => {
@@ -107,6 +137,12 @@ export default function EventsPage() {
       </div>
 
       {error && <div className="error">{error}</div>}
+      {notice && (
+        <div className="notice row spread">
+          <span>{notice}</span>
+          <button className="small" onClick={() => setNotice(null)}>关闭</button>
+        </div>
+      )}
 
       {events.length === 0 && !loading && !error && <div className="empty">暂无赛事数据</div>}
 
@@ -136,19 +172,45 @@ export default function EventsPage() {
               )}
             </div>
             <div className="grid">
-              {ev.decks.map((d) => (
-                <Link key={d.id} to={`/deck/${encodeURIComponent(d.id)}`} className="deck-card">
-                  <h3>{d.deck_name}</h3>
-                  <div className="small muted">
-                    {d.player || '—'}
-                    {d.place ? ` · 第 ${d.place} 名` : ''}
+              {ev.decks.map((d) => {
+                const saved = savedIds.has(d.id)
+                const open = () => nav(`/deck/${encodeURIComponent(d.id)}`)
+                return (
+                  <div
+                    key={d.id}
+                    className="deck-card"
+                    role="link"
+                    tabIndex={0}
+                    onClick={open}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        open()
+                      }
+                    }}
+                  >
+                    <h3>{d.deck_name}</h3>
+                    <div className="small muted">
+                      {d.player || '—'}
+                      {d.place ? ` · 第 ${d.place} 名` : ''}
+                    </div>
+                    <div className="small muted">
+                      主牌 {d.mainboard_count}
+                      {d.sideboard_count ? ` · 备牌 ${d.sideboard_count}` : ''}
+                    </div>
+                    {/* 按钮独立生效，不能冒泡触发卡片跳转 */}
+                    <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
+                      <button
+                        onClick={() => save(d.id)}
+                        disabled={saved || savingId === d.id}
+                        title={saved ? '这副已在套牌集中' : '把牌表存到本机套牌集'}
+                      >
+                        {saved ? '已在套牌集' : savingId === d.id ? '保存中…' : '存入套牌集'}
+                      </button>
+                    </div>
                   </div>
-                  <div className="small muted">
-                    主牌 {d.mainboard_count}
-                    {d.sideboard_count ? ` · 备牌 ${d.sideboard_count}` : ''}
-                  </div>
-                </Link>
-              ))}
+                )
+              })}
             </div>
           </section>
         ))}

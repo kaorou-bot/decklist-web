@@ -6,8 +6,8 @@ import { isMultiPart, isTrueDualFace } from '../lib/layout'
 import { estimateManaValue } from '../lib/mana'
 import ManaCost from '../components/ManaCost'
 import { downloadBlob, exportDeckImage } from '../lib/deckImage'
-import { parseDeckText } from '../lib/deckImport'
 import { resolveArtForImages } from '../lib/cardArt'
+import { customDeckToServerDeck, editorPathOf, findLocalDeck, isLocalDeckId, localDeckId, saveServerDeck } from '../lib/localDeck'
 import { enrichCards, type CardMeta } from '../lib/enrich'
 import CardImage from '../components/CardImage'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
@@ -20,8 +20,12 @@ type Tab = 'list' | 'stats' | 'hand' | 'similar'
 const keyOf = (c: ServerDeckCard) => c.name
 
 export default function DeckDetailPage() {
-  const { id } = useParams<{ id: string }>()
+  // /deck/:id 是服务器套牌，/deck/local/:uuid 是本机套牌集里的套牌
+  const { id: serverId, uuid } = useParams<{ id?: string; uuid?: string }>()
+  const id = uuid ? localDeckId(uuid) : serverId
+  const isLocal = isLocalDeckId(id)
   const [deck, setDeck] = useState<ServerDeck | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
   const [meta, setMeta] = useState<Record<string, CardMeta>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -37,6 +41,20 @@ export default function DeckDetailPage() {
 
   useEffect(() => {
     if (!id) return
+    if (isLocal) {
+      // 本机套牌：直接读 localStorage，转换为详情页所需的形状
+      setLoading(true)
+      const record = findLocalDeck(id)
+      if (record) {
+        setDeck(customDeckToServerDeck(record))
+        setError(null)
+      } else {
+        setDeck(null)
+        setError('这套本地套牌不存在，可能已被删除')
+      }
+      setLoading(false)
+      return
+    }
     const ctrl = new AbortController()
     setLoading(true)
     api
@@ -45,7 +63,7 @@ export default function DeckDetailPage() {
       .catch((e) => setError(String(e.message ?? e)))
       .finally(() => setLoading(false))
     return () => ctrl.abort()
-  }, [id])
+  }, [id, isLocal])
 
   // 后台补齐元数据（法术力、类别、layout、卡图）—— 对齐 App 端「先打开、后补全」
   // /decks/{id} 只给英文名与卡图，类别与费用必须回查 /cards
@@ -66,7 +84,7 @@ export default function DeckDetailPage() {
   }, [deck, enrich])
 
   useEffect(() => {
-    if (!deck || tab !== 'similar' || similar.length > 0) return
+    if (!deck || isLocal || tab !== 'similar' || similar.length > 0) return
     let alive = true
     setSimilarLoading(true)
     api
@@ -77,7 +95,7 @@ export default function DeckDetailPage() {
     return () => {
       alive = false
     }
-  }, [deck, tab, similar.length])
+  }, [deck, isLocal, tab, similar.length])
 
   const rows = useMemo<Row[]>(() => {
     if (!deck) return []
@@ -155,7 +173,7 @@ export default function DeckDetailPage() {
         onProgress: (d, t) => setProgress([d, t]),
       })
       setPreview(URL.createObjectURL(res.blob))
-      downloadBlob(res.blob, `${deck.deck_name || 'deck'}.png`)
+      downloadBlob(res.blob, deck.deck_name, 'deck')
       if (res.missing > 0) setError(`${res.missing} 张卡图缺失，已用占位替代`)
     } catch (e) {
       setError(String((e as Error).message ?? e))
@@ -165,26 +183,16 @@ export default function DeckDetailPage() {
     }
   }
 
+  // 对齐 App：点一下就把整副牌表存进套牌集（App 是「收藏」，网页端对应套牌集）
   const handleSaveToCollection = () => {
     if (!deck) return
-    const text = [
-      `套牌名称：${deck.deck_name}`,
-      `玩家：${deck.player}`,
-      `赛制：${deck.format}`,
-      '',
-      ...(deck.commanders ?? []).map((c) => `${c.quantity} ${c.name}`),
-      ...(deck.mainboard ?? []).map((c) => `${c.quantity} ${c.name}`),
-      '',
-      '备牌',
-      ...(deck.sideboard ?? []).map((c) => `${c.quantity} ${c.name}`),
-    ].join('\n')
-    try {
-      const parsed = parseDeckText(text)
-      sessionStorage.setItem('decklist-web/import-pending', JSON.stringify(parsed))
-      window.location.hash = '#/custom/new'
-    } catch (e) {
-      setError(String((e as Error).message ?? e))
-    }
+    setError(null)
+    const res = saveServerDeck(deck)
+    setNotice(
+      res.outcome === 'duplicate'
+        ? `「${res.name}」已经在套牌集里了`
+        : `已存入套牌集：${res.name}`,
+    )
   }
 
   if (loading) return <div className="empty"><span className="spinner" /> 加载套牌…</div>
@@ -195,7 +203,10 @@ export default function DeckDetailPage() {
     { key: 'list', label: '牌表' },
     { key: 'stats', label: '统计' },
     { key: 'hand', label: '起手模拟' },
-    { key: 'similar', label: `相似套牌${deck.similar_deck_count ? `（${deck.similar_deck_count}）` : ''}` },
+    // 本机套牌没有服务器侧的相似度数据
+    ...(isLocal
+      ? []
+      : [{ key: 'similar' as Tab, label: `相似套牌${deck.similar_deck_count ? `（${deck.similar_deck_count}）` : ''}` }]),
   ]
 
   return (
@@ -204,19 +215,35 @@ export default function DeckDetailPage() {
         <div>
           <h1 className="section-title" style={{ fontSize: 20 }}>{deck.deck_name}</h1>
           <div className="small muted">
-            {[deck.player, deck.place ? `第 ${deck.place} 名` : '', deck.event_date].filter(Boolean).join(' · ')}
+            {isLocal
+              ? '本机套牌集'
+              : [deck.player, deck.place ? `第 ${deck.place} 名` : '', deck.event_date].filter(Boolean).join(' · ')}
           </div>
-          <div className="small muted">{deck.event_name}</div>
+          <div className="small muted">
+            {isLocal
+              ? [deck.format, deck.player].filter(Boolean).join(' · ') || '自定义套牌'
+              : deck.event_name}
+          </div>
         </div>
         <div className="row wrap">
           <button onClick={handleExport} disabled={exporting}>
             {exporting ? `生成中${progress ? ` ${progress[0]}/${progress[1]}` : '…'}` : '生成分享图'}
           </button>
-          <button onClick={handleSaveToCollection}>存入套牌集</button>
+          {isLocal ? (
+            <Link to={editorPathOf(id ?? '')}><button>编辑套牌</button></Link>
+          ) : (
+            <button onClick={handleSaveToCollection}>存入套牌集</button>
+          )}
         </div>
       </div>
 
       {error && <div className="error">{error}</div>}
+      {notice && (
+        <div className="notice row spread">
+          <span>{notice}</span>
+          <button className="small" onClick={() => setNotice(null)}>关闭</button>
+        </div>
+      )}
 
       {preview && (
         <div className="card" style={{ marginBottom: 14 }}>
@@ -298,7 +325,11 @@ export default function DeckDetailPage() {
       )}
 
       <div style={{ marginTop: 18 }}>
-        <Link to="/" className="small muted">← 返回赛事</Link>
+        {isLocal ? (
+          <Link to="/custom" className="small muted">← 返回套牌集</Link>
+        ) : (
+          <Link to="/" className="small muted">← 返回赛事</Link>
+        )}
       </div>
     </div>
   )

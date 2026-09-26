@@ -39,6 +39,7 @@ export default function App() {
           <Route path="/" element={<EventsPage />} />
           <Route path="/meta" element={<MetaPage formats={formats} defaultFormat={defaultFormat} />} />
           <Route path="/search" element={<SearchPage />} />
+          <Route path="/deck/local/:uuid" element={<DeckDetailPage />} />
           <Route path="/deck/:id" element={<DeckDetailPage />} />
           <Route path="/custom" element={<CollectionPage />} />
           <Route path="/custom/:id" element={<DeckEditorPage />} />
