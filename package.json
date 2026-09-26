@@ -1,6 +1,6 @@
 {
   "name": "decklist-web",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "万智牌套牌库 —— 套牌浏览 / 查牌 / 单卡使用率 / 分享图（decklist-android 的网页与桌面端）",
   "author": "kaorou-bot",

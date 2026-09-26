@@ -44,6 +44,8 @@ export interface Printing {
   collectorNumber: string | null
   rarity: string | null
   imageUrl: string | null
+  /** 双面牌背面（切换版本时正反面要同步） */
+  backImageUrl?: string | null
 }
 
 /* ---------------------------------- 缓存 ---------------------------------- */
@@ -352,6 +354,7 @@ export async function resolveArtForImages(
 /** 供 UI 直接读取某个印刷的信息（版本切换列表用） */
 export function printingsWithCurrent(card: {
   image_url?: string | null
+  back_image_url?: string | null
   set_code?: string | null
   set_name?: string | null
   set_name_zh?: string | null
@@ -364,6 +367,7 @@ export function printingsWithCurrent(card: {
     collector_number?: string | null
     rarity?: string | null
     image_url?: string | null
+    back_image_url?: string | null
   }> | null
 }): Printing[] {
   const current: Printing = {
@@ -373,6 +377,7 @@ export function printingsWithCurrent(card: {
     collectorNumber: card.collector_number ?? null,
     rarity: card.rarity ?? null,
     imageUrl: card.image_url ?? null,
+    backImageUrl: card.back_image_url ?? null,
   }
   const rest = (card.printings ?? [])
     .map((p) => ({
@@ -382,6 +387,7 @@ export function printingsWithCurrent(card: {
       collectorNumber: p.collector_number ?? null,
       rarity: p.rarity ?? null,
       imageUrl: p.image_url ?? null,
+      backImageUrl: p.back_image_url ?? null,
     }))
     .filter((p) => p.imageUrl !== current.imageUrl)
   return [current, ...rest]

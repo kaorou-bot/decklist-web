@@ -10,15 +10,10 @@ import CardImage from './CardImage'
 import ManaCost from './ManaCost'
 import { RARITY_LABEL } from '../lib/cardArt'
 import { collectPrintings, type PrintingEx } from '../lib/printings'
+import type { CardVersion } from '../lib/deckVersion'
 
 /** 一次版本选择的结果 */
-export interface VersionPick {
-  imageUrl: string | null
-  setCode: string | null
-  setNameZh: string | null
-  collectorNumber: string | null
-  rarity: string | null
-}
+export type VersionPick = CardVersion
 
 export default function CardVersionDialog(props: {
   /** 英文卡名（查不到 id 时按名字兜底回查） */
@@ -76,6 +71,15 @@ export default function CardVersionDialog(props: {
     }
   }, [cardId, name])
 
+  // current/original 是父组件每次渲染新建的对象，直接拿它当依赖会让
+  // 父组件任何无关重渲染（翻面、切 tab…）都把用户刚选的版本重置回默认。
+  // 这里只用「当前版本的指纹」做依赖。
+  const curSig = [
+    current?.imageUrl ?? original?.imageUrl ?? '',
+    current?.setCode ?? original?.setCode ?? '',
+    current?.collectorNumber ?? original?.collectorNumber ?? '',
+  ].join('|')
+
   // 版本列表：正常版在前、改名异画在后；当前显示的版本一定在列表里
   const printings = useMemo<PrintingEx[]>(() => {
     const base: VersionPick | null = current ?? original ?? null
@@ -88,6 +92,7 @@ export default function CardVersionDialog(props: {
         collectorNumber: base.collectorNumber ?? null,
         rarity: base.rarity ?? null,
         imageUrl: base.imageUrl,
+        backImageUrl: base.backImageUrl ?? null,
         faceName: null,
         variant: false,
       })
@@ -114,25 +119,31 @@ export default function CardVersionDialog(props: {
             collectorNumber: base.collectorNumber ?? null,
             rarity: base.rarity ?? null,
             imageUrl: base.imageUrl,
+            backImageUrl: base.backImageUrl ?? null,
           },
         ]
       : []
-  }, [all, detail, current, original])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [all, detail, curSig])
 
-  // 高亮到与当前显示一致的那一项（按图 URL 比对，比得上就比编号）
+  // 高亮到与当前显示一致的那一项（按图 URL 比对）
   const [index, setIndex] = useState(0)
   useEffect(() => {
-    const cur = current?.imageUrl ?? original?.imageUrl ?? null
+    const cur = curSig.split('|')[0] || null
     if (!cur) {
       setIndex(0)
       return
     }
     const i = printings.findIndex((p) => p.imageUrl === cur)
     setIndex(i >= 0 ? i : 0)
-  }, [printings, current, original])
+    // 只在「当前版本」真的变了时重置，避免覆盖用户刚点选的版本
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printings, curSig])
 
   const active = printings[Math.min(index, printings.length - 1)] ?? null
-  const shown = showBack && backImageUrl ? backImageUrl : active?.imageUrl ?? current?.imageUrl ?? null
+  // 背面跟着当前版本走：换版本时正反面一起换，不会「正面 A 版 + 背面 B 版」
+  const backOf = active?.backImageUrl ?? backImageUrl ?? null
+  const shown = showBack && backOf ? backOf : active?.imageUrl ?? current?.imageUrl ?? null
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
@@ -183,7 +194,7 @@ export default function CardVersionDialog(props: {
               {active?.rarity ? ` · ${RARITY_LABEL[active.rarity] ?? active.rarity}` : ''}
             </div>
 
-            {isDualFace && backImageUrl && (
+            {isDualFace && backOf && (
               <div className="face-toggle" style={{ marginTop: 6 }}>
                 <button className={!showBack ? 'on' : ''} onClick={() => setShowBack(false)}>正面</button>
                 <button className={showBack ? 'on' : ''} onClick={() => setShowBack(true)}>背面</button>
@@ -225,6 +236,7 @@ export default function CardVersionDialog(props: {
                   if (!active) return
                   onPick({
                     imageUrl: active.imageUrl,
+                    backImageUrl: active.backImageUrl ?? null,
                     setCode: active.setCode,
                     setNameZh: active.setNameZh,
                     collectorNumber: active.collectorNumber,

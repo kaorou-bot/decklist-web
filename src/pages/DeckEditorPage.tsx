@@ -9,6 +9,8 @@ import { enrichCards, type CardMeta } from '../lib/enrich'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
 import PageHeader from '../components/PageHeader'
 import DeckVisualEditor from '../components/DeckVisualEditor'
+import { toChineseCards } from '../lib/deckName'
+import { remapVersions, type VersionMap } from '../lib/deckVersion'
 import type { StatCard } from '../lib/deckStats'
 
 type Tab = 'edit' | 'stats' | 'hand'
@@ -30,6 +32,7 @@ export default function DeckEditorPage() {
   const [meta, setMeta] = useState<Record<string, CardMeta>>({})
   const [enriching, setEnriching] = useState(false)
   const [shot, setShot] = useState<{ blob: Blob; ext: string; name: string } | null>(null)
+  const [versions, setVersions] = useState<VersionMap>({})
 
   // 新建时接住「存入套牌集」带来的待导入内容
   useEffect(() => {
@@ -60,6 +63,7 @@ export default function DeckEditorPage() {
     setPlayer(found.player ?? '')
     setFormat(found.format ?? '')
     setText(deckToText(found))
+    setVersions(found.versions ?? {})
   }, [id, isNew])
 
   const parsed = useMemo(() => {
@@ -127,12 +131,20 @@ export default function DeckEditorPage() {
     const deckId = isNew ? newDeckId() : decodeURIComponent(id!)
     const now = Date.now()
     const existing = decks.find((d) => d.id === deckId)
+    // 英文牌表保存时自动转成中文名；已选好的印刷版本按新牌名重新挂上，不会丢
+    const raw = parsed.deck.cards
+    const cards = toChineseCards(raw, meta)
+    const versions = remapVersions(
+      existing?.versions,
+      raw.map((c, i) => ({ from: c.name, to: cards[i].name, sideboard: c.sideboard })),
+    )
     const record: CustomDeck = {
       id: deckId,
       name: name.trim() || '未命名套牌',
       player: player.trim() || undefined,
       format: format.trim() || undefined,
-      cards: parsed.deck.cards,
+      cards,
+      versions: Object.keys(versions).length > 0 ? versions : existing?.versions,
       representative: existing?.representative,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
@@ -259,6 +271,7 @@ export default function DeckEditorPage() {
               meta={meta}
               onChange={applyCards}
               enriching={enriching}
+              versions={versions}
             />
           </>
         ) : (

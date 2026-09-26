@@ -9,6 +9,9 @@
 
 import type { ServerDeck, ServerDeckCard } from '../api/types'
 import { deckTotals, loadDecks, newDeckId, saveDecks, type CustomDeck } from './storage'
+import type { CardMeta } from './enrich'
+import { toChineseCards } from './deckName'
+import { remapVersions, type VersionMap } from './deckVersion'
 
 export const LOCAL_PREFIX = 'local://deck/'
 
@@ -78,19 +81,32 @@ export function customDeckToServerDeck(d: CustomDeck): ServerDeck {
   }
 }
 
-/** 服务器套牌 → 本地套牌记录 */
-export function serverDeckToCustomDeck(deck: ServerDeck): CustomDeck {
+/** 服务器套牌 → 本地套牌记录。给了 meta 就把牌名换成中文，给了 versions 就一起存 */
+export function serverDeckToCustomDeck(
+  deck: ServerDeck,
+  opts?: { meta?: Record<string, CardMeta>; versions?: VersionMap },
+): CustomDeck {
   const now = Date.now()
+  const raw: { name: string; quantity: number; sideboard: boolean }[] = [
+    ...(deck.commanders ?? []).map((c) => ({ name: c.name, quantity: c.quantity, sideboard: false })),
+    ...(deck.mainboard ?? []).map((c) => ({ name: c.name, quantity: c.quantity, sideboard: false })),
+    ...(deck.sideboard ?? []).map((c) => ({ name: c.name, quantity: c.quantity, sideboard: true })),
+  ]
+  const cards = opts?.meta ? toChineseCards(raw, opts.meta) : raw
+  // 牌名中文化后版本 key 要跟着迁过去
+  const versions = opts?.meta
+    ? remapVersions(
+        opts.versions,
+        raw.map((c, i) => ({ from: c.name, to: cards[i].name, sideboard: c.sideboard })),
+      )
+    : opts?.versions
   return {
     id: newDeckId(),
     name: deck.deck_name || '未命名套牌',
     player: deck.player || undefined,
     format: deck.format || deck.format_code || undefined,
-    cards: [
-      ...(deck.commanders ?? []).map((c) => ({ name: c.name, quantity: c.quantity, sideboard: false })),
-      ...(deck.mainboard ?? []).map((c) => ({ name: c.name, quantity: c.quantity, sideboard: false })),
-      ...(deck.sideboard ?? []).map((c) => ({ name: c.name, quantity: c.quantity, sideboard: true })),
-    ],
+    cards,
+    versions: Object.keys(versions ?? {}).length > 0 ? versions : undefined,
     representative: deck.representative_card?.name ?? undefined,
     // 记录来源，避免同一副服务器套牌反复保存出副本
     sourceDeckId: deck.id,
@@ -106,11 +122,14 @@ export interface SaveOutcome {
 }
 
 /** 把一副服务器套牌写进套牌集；若已存过则返回 duplicate */
-export function saveServerDeck(deck: ServerDeck): SaveOutcome {
+export function saveServerDeck(
+  deck: ServerDeck,
+  opts?: { meta?: Record<string, CardMeta>; versions?: VersionMap },
+): SaveOutcome {
   const decks = loadDecks()
   const existing = decks.find((d) => d.sourceDeckId === deck.id)
   if (existing) return { outcome: 'duplicate', id: existing.id, name: existing.name }
-  const record = serverDeckToCustomDeck(deck)
+  const record = serverDeckToCustomDeck(deck, opts)
   saveDecks([...decks, record])
   return { outcome: 'saved', id: record.id, name: record.name }
 }

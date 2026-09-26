@@ -5,6 +5,8 @@ export interface ImportedCard {
   name: string
   quantity: number
   sideboard: boolean
+  /** 中文化之前的原始牌名（多为英文名），用于查卡兜底 */
+  nameEn?: string
 }
 
 export interface ImportedDeck {

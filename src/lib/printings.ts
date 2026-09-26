@@ -127,6 +127,7 @@ export async function collectPrintings(
       collectorNumber: d.collector_number ?? null,
       rarity: d.rarity ?? null,
       imageUrl: d.image_url ?? null,
+      backImageUrl: d.back_image_url ?? null,
     })
     for (const p of d.printings ?? []) {
       push({
@@ -136,6 +137,7 @@ export async function collectPrintings(
         collectorNumber: p.collector_number ?? null,
         rarity: p.rarity ?? null,
         imageUrl: p.image_url ?? null,
+        backImageUrl: p.back_image_url ?? null,
       })
     }
   }

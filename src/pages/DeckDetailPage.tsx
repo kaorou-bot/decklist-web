@@ -11,7 +11,9 @@ import { imageVariants, scryfallPrintUrl } from '../lib/cardArt'
 import { customDeckToServerDeck, editorPathOf, findLocalDeck, isLocalDeckId, localDeckId, saveServerDeck } from '../lib/localDeck'
 import { enrichCards, type CardMeta } from '../lib/enrich'
 import CardImage from '../components/CardImage'
-import CardVersionDialog, { type VersionPick } from '../components/CardVersionDialog'
+import CardVersionDialog from '../components/CardVersionDialog'
+import { versionKey, type VersionMap } from '../lib/deckVersion'
+import { loadDecks, saveDecks } from '../lib/storage'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
 import PageHeader from '../components/PageHeader'
 import DeckCard, { deckPreviewSource } from '../components/DeckCard'
@@ -44,8 +46,9 @@ export default function DeckDetailPage() {
   // 生成结果：交给 ShareImagePanel 展示预览 + 保存入口（不再只是静默写盘）
   const [shot, setShot] = useState<{ blob: Blob; ext: string; name: string } | null>(null)
   const [flipped, setFlipped] = useState<Record<string, boolean>>({})
-  // 牌表里每张卡选中的印刷版本（按卡名记），选中后牌表与分享图都用它
-  const [picks, setPicks] = useState<Record<string, VersionPick>>({})
+  // 牌表里每张卡选中的印刷版本，选中后牌表与分享图都用它；本地套牌会存回套牌集
+  const [picks, setPicks] = useState<VersionMap>({})
+  const [versionDirty, setVersionDirty] = useState(false)
   const [versionRow, setVersionRow] = useState<Row | null>(null)
   const [tab, setTab] = useState<Tab>('list')
   const [similar, setSimilar] = useState<ServerDeck[]>([])
@@ -59,6 +62,8 @@ export default function DeckDetailPage() {
       const record = findLocalDeck(id)
       if (record) {
         setDeck(customDeckToServerDeck(record))
+        setPicks(record.versions ?? {})
+        setVersionDirty(false)
         setError(null)
       } else {
         setDeck(null)
@@ -162,7 +167,7 @@ export default function DeckDetailPage() {
       // 预先逐个 probe 的话最坏要发一百多个，慢且容易卡住。
       const artOf = (r: Row): (string | null)[] => {
         // 牌表里选过版本就用选的那张，其余候选照旧排在后面兜底
-        const picked = picks[r.name]?.imageUrl ?? null
+        const picked = picks[versionKey(r.name, r.side)]?.imageUrl ?? null
         const primary = picked ?? r.image_url ?? r.meta?.imageUrl ?? null
         const list: (string | null)[] = imageVariants(primary).slice(0, 4)
         const sf = scryfallPrintUrl(r.meta?.setCode ?? null, r.meta?.collectorNumber ?? null, false)
@@ -203,11 +208,25 @@ export default function DeckDetailPage() {
 
   const handleCancelExport = () => abortRef.current?.abort()
 
+  // 本机套牌：把牌表里选好的印刷版本写回套牌集
+  const handleSaveVersions = () => {
+    if (!id) return
+    const decks = loadDecks()
+    const i = decks.findIndex((d) => d.id === id)
+    if (i < 0) return
+    const next = [...decks]
+    next[i] = { ...next[i], versions: picks, updatedAt: Date.now() }
+    saveDecks(next)
+    setVersionDirty(false)
+    setNotice('已保存选中的印刷版本')
+  }
+
   // 对齐 App：点一下就把整副牌表存进套牌集（App 是「收藏」，网页端对应套牌集）
   const handleSaveToCollection = () => {
     if (!deck) return
     setError(null)
-    const res = saveServerDeck(deck)
+    // 连同「中文牌名 + 选好的印刷版本」一起存，之后再打开还是这套配置
+    const res = saveServerDeck(deck, { meta, versions: picks })
     setNotice(
       res.outcome === 'duplicate'
         ? `「${res.name}」已经在套牌集里了`
@@ -259,7 +278,12 @@ export default function DeckDetailPage() {
             </button>
             {exporting && <button className="small" onClick={handleCancelExport}>取消</button>}
             {isLocal ? (
-              <Link to={editorPathOf(id ?? '')}><button>编辑套牌</button></Link>
+              <>
+                <Link to={editorPathOf(id ?? '')}><button>编辑套牌</button></Link>
+                {versionDirty && (
+                  <button className="btn-primary" onClick={handleSaveVersions}>保存版本</button>
+                )}
+              </>
             ) : (
               <button onClick={handleSaveToCollection}>存入套牌集</button>
             )}
@@ -355,7 +379,7 @@ export default function DeckDetailPage() {
           name={versionRow.name}
           nameZh={versionRow.name_zh}
           cardId={versionRow.meta?.cardId ?? versionRow.card_id ?? null}
-          current={picks[versionRow.name] ?? null}
+          current={picks[versionKey(versionRow.name, versionRow.side)] ?? null}
           original={{
             imageUrl: versionRow.image_url ?? versionRow.meta?.imageUrl ?? null,
             setCode: versionRow.meta?.setCode ?? null,
@@ -368,14 +392,16 @@ export default function DeckDetailPage() {
             isTrueDualFace(versionRow.meta?.layout ?? null) ||
             (versionRow.meta?.layout == null && !!versionRow.meta?.backImageUrl)
           }
-          onPick={(p) =>
+          onPick={(p) => {
             setPicks((prev) => {
               const next = { ...prev }
-              if (p) next[versionRow.name] = p
-              else delete next[versionRow.name]
+              const k = versionKey(versionRow.name, versionRow.side)
+              if (p) next[k] = p
+              else delete next[k]
               return next
             })
-          }
+            setVersionDirty(true)
+          }}
           onClose={() => setVersionRow(null)}
         />
       )}
@@ -403,8 +429,8 @@ function CardSection({
   rows: Row[]
   flipped: Record<string, boolean>
   setFlipped: React.Dispatch<React.SetStateAction<Record<string, boolean>>>
-  /** 每张卡选中的印刷版本（键为卡名） */
-  picks: Record<string, VersionPick>
+  /** 每张卡选中的印刷版本（键为 versionKey） */
+  picks: VersionMap
   onPickVersion: (row: Row) => void
 }) {
   return (
@@ -418,10 +444,10 @@ function CardSection({
           const dual = isTrueDualFace(layout) || (layout == null && !!r.meta?.backImageUrl)
           const multi = isMultiPart(layout)
           const showBack = dual && flipped[r.name]
-          const pick = picks[r.name]
-          // 翻到背面时优先背面；否则用选中的版本，没选过就用 API 给的图
+          const pick = picks[versionKey(r.name, r.side)]
+          // 翻到背面时用「选中版本的背面」，保证正反面是同一个印刷
           const img = showBack
-            ? r.meta?.backImageUrl
+            ? pick?.backImageUrl ?? r.meta?.backImageUrl
             : pick?.imageUrl ?? (r.image_url ?? r.meta?.imageUrl)
           const faces = r.meta?.faces
           return (

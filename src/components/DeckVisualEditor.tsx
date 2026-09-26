@@ -9,6 +9,7 @@ import type { ImportedCard } from '../lib/deckImport'
 import { matchingKey } from '../lib/deckImport'
 import { isArtVariant } from '../lib/printings'
 import type { CardMeta } from '../lib/enrich'
+import { versionKey, type VersionMap } from '../lib/deckVersion'
 import CardImage from './CardImage'
 
 export default function DeckVisualEditor(props: {
@@ -16,6 +17,8 @@ export default function DeckVisualEditor(props: {
   meta: Record<string, CardMeta>
   onChange: (cards: ImportedCard[]) => void
   enriching?: boolean
+  /** 已保存的印刷版本，有的话卡图用它而不是默认图 */
+  versions?: VersionMap
 }) {
   const { cards, meta, onChange } = props
 
@@ -185,6 +188,7 @@ export default function DeckVisualEditor(props: {
         count={groups.main.reduce((s, c) => s + c.quantity, 0)}
         rows={groups.main}
         meta={meta}
+        versions={props.versions}
         sideboard={false}
         onBump={bump}
         onRemove={remove}
@@ -197,6 +201,7 @@ export default function DeckVisualEditor(props: {
         count={groups.side.reduce((s, c) => s + c.quantity, 0)}
         rows={groups.side}
         meta={meta}
+        versions={props.versions}
         sideboard
         onBump={bump}
         onRemove={remove}
@@ -212,13 +217,14 @@ function CardGroup(props: {
   count: number
   rows: ImportedCard[]
   meta: Record<string, CardMeta>
+  versions?: VersionMap
   sideboard: boolean
   onBump: (name: string, sideboard: boolean, delta: number) => void
   onRemove: (name: string, sideboard: boolean) => void
   onMove: (name: string, sideboard: boolean) => void
   emptyHint?: string
 }) {
-  const { title, count, rows, meta, sideboard, onBump, onRemove, onMove, emptyHint } = props
+  const { title, count, rows, meta, versions, sideboard, onBump, onRemove, onMove, emptyHint } = props
   return (
     <section className="card" style={{ marginTop: 14 }}>
       <div className="row spread" style={{ marginBottom: 10 }}>
@@ -233,12 +239,13 @@ function CardGroup(props: {
         <div className="ve-grid">
           {rows.map((c) => {
             const m = meta[c.name]
+            const ver = versions?.[versionKey(c.name, c.sideboard)]
             return (
               <div key={`${c.sideboard ? 's' : 'm'}-${matchingKey(c.name)}`} className="ve-card">
                 <CardImage
                   className="ve-thumb"
                   source={{
-                    url: m?.imageUrl ?? null,
+                    url: ver?.imageUrl ?? m?.imageUrl ?? null,
                     cardId: m?.cardId ?? null,
                     setCode: m?.setCode ?? null,
                     collectorNumber: m?.collectorNumber ?? null,
