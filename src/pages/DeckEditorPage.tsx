@@ -7,6 +7,7 @@ import ShareImagePanel from '../components/ShareImagePanel'
 import { artCandidatesByName } from '../lib/cardArt'
 import { enrichCards, type CardMeta } from '../lib/enrich'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
+import PageHeader from '../components/PageHeader'
 import type { StatCard } from '../lib/deckStats'
 
 type Tab = 'edit' | 'stats' | 'hand'
@@ -159,9 +160,11 @@ export default function DeckEditorPage() {
 
   return (
     <div style={{ paddingTop: 16 }}>
-      <h1 className="section-title" style={{ fontSize: 20, marginBottom: 12 }}>
-        {isNew ? '新建套牌' : '编辑套牌'}
-      </h1>
+      <PageHeader
+        fallback="/custom"
+        title={isNew ? '新建套牌' : '编辑套牌'}
+        subtitle={parsed.ok ? `主牌 ${totals.main} 张${totals.side ? ` · 备牌 ${totals.side} 张` : ''}` : '按「数量 牌名」每行一张'}
+      />
 
       <div className="row wrap" style={{ marginBottom: 12 }}>
         <div className="segmented">

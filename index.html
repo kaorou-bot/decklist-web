@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>MTG 套牌管理</title>
+    <script>
+      // 首屏前先定好主题，避免深色模式下闪一下白底
+      (function(){try{var m=localStorage.getItem('dlw:theme')||'system';var d=m==='dark'||(m==='system'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=d?'dark':'light';document.documentElement.style.colorScheme=d?'dark':'light';}catch(e){}})()
+    </script>
   </head>
   <body>
     <div id="root"></div>

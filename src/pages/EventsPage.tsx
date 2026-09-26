@@ -5,6 +5,7 @@ import type { ServerDeck, ServerRepresentativeCard } from '../api/types'
 import { deckToEvent } from '../api/types'
 import { useFormats } from '../lib/formats'
 import CardImage from '../components/CardImage'
+import DeckCard from '../components/DeckCard'
 import { saveServerDeck, savedServerDeckIds } from '../lib/localDeck'
 
 interface EventGroup {
@@ -148,15 +149,8 @@ export default function EventsPage() {
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         {events.map((ev) => (
-          <section key={ev.id} className="card">
-            <div className="row spread wrap" style={{ marginBottom: 10 }}>
-              <div>
-                <h2 className="section-title">{ev.name}</h2>
-                <div className="small muted">
-                  {fmtName(ev.format)} · {ev.date}
-                  {ev.deckCount != null ? ` · ${ev.deckCount} 副` : ` · ${ev.decks.length} 副`}
-                </div>
-              </div>
+          <section key={ev.id} className="card event-card">
+            <div className="event-head">
               {ev.cover && (
                 <CardImage
                   source={{
@@ -164,53 +158,44 @@ export default function EventsPage() {
                     cardId: ev.cover.card_id,
                     name: ev.cover.name,
                   }}
-                  placeholder={null}
+                  placeholder={<span className="small muted">无图</span>}
                   alt=""
                   lazy={false}
-                  className="event-cover"
+                  className="event-cover-lg"
                 />
               )}
+              <div className="event-head-text">
+                <h2 className="section-title">{ev.name}</h2>
+                <div className="event-tags">
+                  <span className="tag accent">{fmtName(ev.format)}</span>
+                  <span className="tag">{ev.date}</span>
+                  <span className="tag">{ev.deckCount ?? ev.decks.length} 副套牌</span>
+                  {ev.cover && <span className="tag">代表卡 {ev.cover.name_zh || ev.cover.name}</span>}
+                </div>
+              </div>
             </div>
-            <div className="grid">
-              {ev.decks.map((d) => {
-                const saved = savedIds.has(d.id)
-                const open = () => nav(`/deck/${encodeURIComponent(d.id)}`)
-                return (
-                  <div
-                    key={d.id}
-                    className="deck-card"
-                    role="link"
-                    tabIndex={0}
-                    onClick={open}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        open()
+            <div className="event-body">
+              <div className="grid">
+                {ev.decks.map((d) => {
+                  const saved = savedIds.has(d.id)
+                  return (
+                    <DeckCard
+                      key={d.id}
+                      deck={d}
+                      onClick={() => nav(`/deck/${encodeURIComponent(d.id)}`)}
+                      action={
+                        <button
+                          onClick={() => save(d.id)}
+                          disabled={saved || savingId === d.id}
+                          title={saved ? '这副已在套牌集中' : '把牌表存到本机套牌集'}
+                        >
+                          {saved ? '已在套牌集' : savingId === d.id ? '保存中…' : '存入套牌集'}
+                        </button>
                       }
-                    }}
-                  >
-                    <h3>{d.deck_name}</h3>
-                    <div className="small muted">
-                      {d.player || '—'}
-                      {d.place ? ` · 第 ${d.place} 名` : ''}
-                    </div>
-                    <div className="small muted">
-                      主牌 {d.mainboard_count}
-                      {d.sideboard_count ? ` · 备牌 ${d.sideboard_count}` : ''}
-                    </div>
-                    {/* 按钮独立生效，不能冒泡触发卡片跳转 */}
-                    <div onClick={(e) => e.stopPropagation()} style={{ marginTop: 10 }}>
-                      <button
-                        onClick={() => save(d.id)}
-                        disabled={saved || savingId === d.id}
-                        title={saved ? '这副已在套牌集中' : '把牌表存到本机套牌集'}
-                      >
-                        {saved ? '已在套牌集' : savingId === d.id ? '保存中…' : '存入套牌集'}
-                      </button>
-                    </div>
-                  </div>
-                )
-              })}
+                    />
+                  )
+                })}
+              </div>
             </div>
           </section>
         ))}

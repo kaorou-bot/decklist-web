@@ -6,6 +6,7 @@ import DeckDetailPage from './pages/DeckDetailPage'
 import CollectionPage from './pages/CollectionPage'
 import DeckEditorPage from './pages/DeckEditorPage'
 import { useFormats } from './lib/formats'
+import ThemeToggle from './components/ThemeToggle'
 
 const tabs = [
   { to: '/', label: '最新赛事' },
@@ -32,6 +33,9 @@ export default function App() {
               {t.label}
             </NavLink>
           ))}
+          <div style={{ marginLeft: 'auto' }}>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
       <main className="app">

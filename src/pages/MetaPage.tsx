@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import type { UsageCard, UsageSnapshot } from '../api/types'
 import CardImage from '../components/CardImage'
+import PageHeader from '../components/PageHeader'
 
 const WINDOWS = [
   { value: 7, label: '近 7 天 · Top 10' },
@@ -63,6 +64,15 @@ export default function MetaPage({
 
   return (
     <div style={{ paddingTop: 16 }}>
+      <PageHeader
+        noBack
+        title="单卡使用率"
+        subtitle={
+          data
+            ? `统计日期 ${data.calculation_date}${group ? ` · 样本 ${group.total_decks} 副` : ''}`
+            : 'MTGTop8 收录样本的卡牌使用率'
+        }
+      />
       <div className="row spread wrap" style={{ marginBottom: 12 }}>
         <div className="row wrap">
           <label className="small muted">赛制</label>

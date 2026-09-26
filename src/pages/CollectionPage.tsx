@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom'
 import { deckTotals, loadDecks, saveDecks, type CustomDeck } from '../lib/storage'
 import { exportDeckImage } from '../lib/deckImage'
 import ShareImagePanel from '../components/ShareImagePanel'
+import CardImage from '../components/CardImage'
+import PageHeader from '../components/PageHeader'
 import { artCandidatesByName } from '../lib/cardArt'
 import { detailPathOf, editorPathOf } from '../lib/localDeck'
 
@@ -52,15 +54,14 @@ export default function CollectionPage() {
 
   return (
     <div style={{ paddingTop: 16 }}>
-      <div className="row spread" style={{ marginBottom: 14 }}>
-        <div>
-          <h1 className="section-title" style={{ fontSize: 20 }}>套牌集</h1>
-          <div className="small muted">保存在本机浏览器，换设备或清缓存会丢失</div>
-        </div>
-        <div className="row">
+      <PageHeader
+        noBack
+        title="套牌集"
+        subtitle={`保存在本机浏览器，换设备或清缓存会丢失 · 共 ${decks.length} 副`}
+        actions={
           <button className="btn-primary" onClick={() => nav('/custom/new')}>新建套牌</button>
-        </div>
-      </div>
+        }
+      />
 
       {error && <div className="error">{error}</div>}
       {shot && (
@@ -96,17 +97,31 @@ export default function CollectionPage() {
                   }
                 }}
               >
-                <h3>{d.name || '未命名套牌'}</h3>
-                <div className="small muted">
-                  {[d.format, d.player].filter(Boolean).join(' · ') || '—'}
-                </div>
-                <div className="small muted">主牌 {t.main}{t.side ? ` · 备牌 ${t.side}` : ''}</div>
-                <div className="row wrap" style={{ marginTop: 10 }} onClick={(e) => e.stopPropagation()}>
-                  <button onClick={() => nav(editorPathOf(d.id))}>编辑</button>
-                  <button onClick={() => share(d)} disabled={busy === d.id}>
-                    {busy === d.id ? '生成中…' : '分享图'}
-                  </button>
-                  <button className="btn-danger" onClick={() => remove(d.id)}>删除</button>
+                <CardImage
+                  className="deck-preview"
+                  source={{ name: d.representative || d.cards[0]?.name || null }}
+                  placeholder={<span className="small muted">无图</span>}
+                  alt=""
+                  lazy={false}
+                />
+                <div className="deck-card-body">
+                  <h3>{d.name || '未命名套牌'}</h3>
+                  <div className="deck-meta">
+                    <span className="ellipsis" style={{ maxWidth: 160 }}>
+                      {[d.format, d.player].filter(Boolean).join(' · ') || '—'}
+                    </span>
+                  </div>
+                  <div className="deck-meta" style={{ marginTop: 2 }}>
+                    <span>主牌 {t.main}</span>
+                    {t.side ? <span>备牌 {t.side}</span> : null}
+                  </div>
+                  <div className="row wrap" style={{ marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
+                    <button onClick={() => nav(editorPathOf(d.id))}>编辑</button>
+                    <button onClick={() => share(d)} disabled={busy === d.id}>
+                      {busy === d.id ? '生成中…' : '分享图'}
+                    </button>
+                    <button className="btn-danger" onClick={() => remove(d.id)}>删除</button>
+                  </div>
                 </div>
               </div>
             )

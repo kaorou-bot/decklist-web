@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api/client'
 import type { ServerDeck, ServerDeckCard } from '../api/types'
 import { isMultiPart, isTrueDualFace } from '../lib/layout'
@@ -13,6 +13,8 @@ import { enrichCards, type CardMeta } from '../lib/enrich'
 import CardImage from '../components/CardImage'
 import CardVersionDialog, { type VersionPick } from '../components/CardVersionDialog'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
+import PageHeader from '../components/PageHeader'
+import DeckCard, { deckPreviewSource } from '../components/DeckCard'
 import type { StatCard } from '../lib/deckStats'
 
 type Row = ServerDeckCard & { key: string; side: boolean; commander: boolean; meta?: CardMeta }
@@ -24,6 +26,7 @@ const keyOf = (c: ServerDeckCard) => c.name
 export default function DeckDetailPage() {
   // /deck/:id 是服务器套牌，/deck/local/:uuid 是本机套牌集里的套牌
   const { id: serverId, uuid } = useParams<{ id?: string; uuid?: string }>()
+  const nav = useNavigate()
   const id = uuid ? localDeckId(uuid) : serverId
   const isLocal = isLocalDeckId(id)
   const [deck, setDeck] = useState<ServerDeck | null>(null)
@@ -228,34 +231,41 @@ export default function DeckDetailPage() {
 
   return (
     <div style={{ paddingTop: 16 }}>
-      <div className="row spread wrap" style={{ marginBottom: 12 }}>
-        <div>
-          <h1 className="section-title" style={{ fontSize: 20 }}>{deck.deck_name}</h1>
-          <div className="small muted">
-            {isLocal
-              ? '本机套牌集'
-              : [deck.player, deck.place ? `第 ${deck.place} 名` : '', deck.event_date].filter(Boolean).join(' · ')}
-          </div>
-          <div className="small muted">
-            {isLocal
-              ? [deck.format, deck.player].filter(Boolean).join(' · ') || '自定义套牌'
-              : deck.event_name}
-          </div>
-        </div>
-        <div className="row wrap">
-          <button onClick={handleExport} disabled={exporting}>
-            {exporting
-              ? `${phase === 'draw' ? '绘制中' : '找图中'}${progress ? ` ${progress[0]}/${progress[1]}` : '…'}`
-              : '生成分享图'}
-          </button>
-          {exporting && <button className="small" onClick={handleCancelExport}>取消</button>}
-          {isLocal ? (
-            <Link to={editorPathOf(id ?? '')}><button>编辑套牌</button></Link>
-          ) : (
-            <button onClick={handleSaveToCollection}>存入套牌集</button>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        fallback="/"
+        title={deck.deck_name}
+        lead={
+          <CardImage
+            className="deck-cover"
+            source={deckPreviewSource(deck)}
+            placeholder={<span className="small muted">无图</span>}
+            alt=""
+            lazy={false}
+          />
+        }
+        subtitle={
+          isLocal
+            ? `本机套牌集 · ${[deck.format, deck.player].filter(Boolean).join(' · ') || '自定义套牌'}`
+            : [deck.event_name, deck.player, deck.place ? `第 ${deck.place} 名` : '', deck.event_date]
+                .filter(Boolean)
+                .join(' · ')
+        }
+        actions={
+          <>
+            <button onClick={handleExport} disabled={exporting}>
+              {exporting
+                ? `${phase === 'draw' ? '绘制中' : '找图中'}${progress ? ` ${progress[0]}/${progress[1]}` : '…'}`
+                : '生成分享图'}
+            </button>
+            {exporting && <button className="small" onClick={handleCancelExport}>取消</button>}
+            {isLocal ? (
+              <Link to={editorPathOf(id ?? '')}><button>编辑套牌</button></Link>
+            ) : (
+              <button onClick={handleSaveToCollection}>存入套牌集</button>
+            )}
+          </>
+        }
+      />
 
       {error && <div className="error">{error}</div>}
       {notice && (
@@ -330,14 +340,11 @@ export default function DeckDetailPage() {
           {!similarLoading && similar.length === 0 && <div className="small muted">没有找到近似构筑的套牌</div>}
           <div className="grid">
             {similar.map((d) => (
-              <Link key={d.id} to={`/deck/${encodeURIComponent(d.id)}`} className="deck-card">
-                <h3>{d.deck_name}</h3>
-                <div className="small muted">
-                  {d.player || '—'}
-                  {d.place ? ` · 第 ${d.place} 名` : ''}
-                </div>
-                <div className="small muted">{d.event_date} · {d.event_name}</div>
-              </Link>
+              <DeckCard
+                key={d.id}
+                deck={d}
+                onClick={() => nav(`/deck/${encodeURIComponent(d.id)}`)}
+              />
             ))}
           </div>
         </section>

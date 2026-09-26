@@ -1,19 +1,48 @@
 :root {
   --bg: #f6f7f9;
   --surface: #ffffff;
+  --surface-2: #f0f2f5;
   --border: #e3e6ea;
   --text: #1c2024;
   --text-sub: #5d6673;
   --accent: #2563eb;
   --accent-soft: #eaf1fe;
   --gold: #e6ac41;
+  --gold-soft: #fdf3e0;
   --danger: #c0392b;
+  --danger-soft: #fdecea;
+  --danger-border: #f5c6c2;
+  --shadow: 0 1px 2px rgba(16, 20, 26, 0.06), 0 4px 14px rgba(16, 20, 26, 0.05);
   --radius: 10px;
   font-family: 'Microsoft YaHei', 'PingFang SC', system-ui, -apple-system, sans-serif;
 }
 
+/* 深色主题：只改变量，组件样式不用动 */
+[data-theme='dark'] {
+  --bg: #14171c;
+  --surface: #1c2027;
+  --surface-2: #232932;
+  --border: #2f3742;
+  --text: #e6eaf0;
+  --text-sub: #9aa5b4;
+  --accent: #6b93ff;
+  --accent-soft: #23304a;
+  --gold: #e9bd63;
+  --gold-soft: #3a2f16;
+  --danger: #ff7b6b;
+  --danger-soft: #3a211f;
+  --danger-border: #5c312c;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.3);
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
+}
+
+/* 深色下图片（尤其白底卡图占位）别太刺眼 */
+[data-theme='dark'] img:not(.mana img) {
+  color-scheme: dark;
 }
 
 body {
@@ -196,7 +225,7 @@ textarea {
   height: 56px;
   object-fit: cover;
   border-radius: 4px;
-  background: #dfe3e8;
+  background: var(--surface-2);
   flex-shrink: 0;
 }
 .badge {
@@ -208,8 +237,8 @@ textarea {
   white-space: nowrap;
 }
 .badge-gold {
-  background: #fdf3e0;
-  color: #9a6b0f;
+  background: var(--gold-soft);
+  color: var(--gold);
 }
 
 /* 法术力符号 */
@@ -249,8 +278,8 @@ textarea {
 }
 
 .error {
-  background: #fdecea;
-  border: 1px solid #f5c6c2;
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-border);
   color: var(--danger);
   padding: 10px 14px;
   border-radius: 8px;
@@ -349,14 +378,14 @@ textarea {
   width: 100%;
   aspect-ratio: 5 / 7;
   object-fit: cover;
-  background: #dfe3e8;
+  background: var(--surface-2);
   display: block;
 }
 .search-card-img.placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #eceef1;
+  background: var(--surface-2);
 }
 .search-card-body {
   padding: 8px 10px 10px;
@@ -588,7 +617,7 @@ textarea {
   aspect-ratio: 5 / 7;
   border-radius: 8px;
   overflow: hidden;
-  background: #eceef1;
+  background: var(--surface-2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -628,7 +657,7 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #eceef1;
+  background: var(--surface-2);
   color: var(--text-sub);
   text-align: center;
   font-size: 12px;
@@ -666,4 +695,214 @@ textarea {
 }
 .printing-chip strong {
   font-size: 12px;
+}
+
+/* 页面标题栏 + 返回按钮 */
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.page-head-text {
+  min-width: 0;
+}
+.page-title {
+  font-size: 20px;
+  font-weight: 700;
+  margin: 0;
+  line-height: 1.35;
+  word-break: break-word;
+}
+.back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px 6px 10px;
+  flex-shrink: 0;
+}
+.back-arrow {
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* 主题切换 */
+.theme-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.theme-toggle button {
+  border: none;
+  border-radius: 0;
+  padding: 5px 11px;
+  font-size: 13px;
+}
+.theme-toggle button.on {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 套牌卡片（带预览图） */
+.deck-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+}
+.deck-card:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+.deck-preview {
+  width: 46px;
+  height: 64px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface-2);
+  display: block;
+}
+.deck-preview.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+}
+.deck-card-body {
+  flex: 1;
+  min-width: 0;
+}
+.deck-card h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  line-height: 1.4;
+}
+.deck-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 13px;
+  color: var(--text-sub);
+}
+
+/* 名次徽章 */
+.rank-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-2);
+  color: var(--text-sub);
+  flex-shrink: 0;
+}
+.rank-badge.top1 {
+  background: var(--gold);
+  color: #2b2000;
+}
+.rank-badge.top2 {
+  background: #c9d1da;
+  color: #23282e;
+}
+.rank-badge.top3 {
+  background: #cd8b52;
+  color: #2b1705;
+}
+.rank-badge.top8 {
+  background: var(--gold-soft);
+  color: var(--gold);
+}
+
+/* 颜色符号（WUBRG） */
+.color-dots {
+  display: inline-flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid rgba(120, 120, 120, 0.45);
+}
+.color-dot.W { background: #fffbd5; }
+.color-dot.U { background: #0e68ab; }
+.color-dot.B { background: #241c15; }
+.color-dot.R { background: #d3202a; }
+.color-dot.G { background: #00733e; }
+.color-dot.C { background: #b8bfc6; }
+
+/* 赛事区块 */
+.event-card {
+  padding: 0;
+  overflow: hidden;
+}
+.event-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.event-head-text {
+  flex: 1;
+  min-width: 0;
+}
+.event-cover-lg {
+  width: 52px;
+  height: 73px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface);
+  display: block;
+}
+.event-body {
+  padding: 14px 16px;
+}
+.event-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  color: var(--text-sub);
+  white-space: nowrap;
+}
+.tag.accent {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 详情页封面 */
+.deck-cover {
+  width: 92px;
+  border-radius: 8px;
+  flex-shrink: 0;
+  box-shadow: var(--shadow);
+  display: block;
 }
