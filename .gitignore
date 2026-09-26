@@ -1,5 +1,8 @@
 node_modules
 dist
+release
+release2
+scripts/_*.cjs
 .DS_Store
 *.local
 .vite

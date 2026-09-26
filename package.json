@@ -1,12 +1,20 @@
 {
   "name": "decklist-web",
-  "private": true,
   "version": "0.1.0",
+  "private": true,
+  "description": "万智牌套牌库 —— 套牌浏览 / 查牌 / 单卡使用率 / 分享图（decklist-android 的网页与桌面端）",
+  "author": "kaorou-bot",
+  "license": "MIT",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "icon": "python scripts/make_icon.py",
+    "app": "npm run build && electron .",
+    "dist:dir": "npm run build && electron-builder --win --dir",
+    "dist:win": "npm run build && electron-builder --win --x64"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -17,7 +25,61 @@
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.2",
+    "electron": "^31.7.7",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.6.3",
     "vite": "^5.4.9"
+  },
+  "build": {
+    "appId": "com.kaorou.decklistweb",
+    "productName": "万智牌套牌库",
+    "copyright": "Copyright © 2026 kaorou-bot",
+    "icon": "build/icon.ico",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "electronDist": "node_modules/electron/dist",
+    "files": [
+      "dist/**",
+      "electron/**",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "maximum",
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-${arch}-便携版.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "万智牌套牌库",
+      "language": "2052",
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "deleteAppDataOnUninstall": false
+    }
   }
 }
