@@ -32,11 +32,9 @@ async function one(name: string): Promise<CardMeta | null> {
   const hit = await api.cardSearch({ q: name, pageSize: 5 })
   const items = hit.items ?? []
   if (items.length === 0) return null
-  // 同名记录里混着「改名异画」（酸液黏菌 → Marauding Mutagen），优先挑本体那张
-  const exact =
-    pickBestCard(items, name) ??
-    items.find((c) => (c.name_zh ?? '') === name.trim()) ??
-    items[0]
+  // 同名记录里混着「改名异画」（酸液黏菌 → Marauding Mutagen），优先挑本体那张。
+  // pickBestCard 内部已按「英文精确 → 中文精确 → 包含匹配」分级，中英文牌名都能命中
+  const exact = pickBestCard(items, name) ?? items[0]
   let layout = exact.layout ?? null
   // 列表不含 layout，多面牌才补一次详情（低成本，且能区分双面 / 多部分）
   if (!layout && (exact.faces?.length ?? 0) > 1) {

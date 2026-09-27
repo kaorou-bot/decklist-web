@@ -8,6 +8,11 @@
 // 两个对策：
 //   1. 挑卡时避开异画（pickBestCard）
 //   2. 版本列表按卡名把所有同名记录的印刷合并起来（collectPrintings）
+//
+// 避异画的前提是「能认准同一张卡」：列表接口的 name 恒为英文，中文在各主要在 name_zh，
+// 所以查「海岛」时英文名一条都等于「海岛」，旧代码遂退化为「从模糊结果里挑第一条非异画」，
+// 于是命中 The Belligerent and Useless Island（好战者号与没用的海岛）/ Forest Bear（树林熊）。
+// pickBestCard 现在先做「英文精确 / 中文精确」两级匹配，再退到包含匹配。
 import { api } from '../api/client'
 import type { ForgeCard, ForgeCardDetail } from '../api/types'
 import type { Printing } from './cardArt'
@@ -33,13 +38,19 @@ export function normName(s: string | null | undefined): string {
     .trim()
 }
 
-/** 图床 URL → 牌面名：.../TMC/Marauding%20Mutagen.fullborder.jpg → Marauding Mutagen */
+/**
+ * 图床 URL → 牌面名：.../TMC/Marauding%20Mutagen.fullborder.jpg → Marauding Mutagen
+ *
+ * 必须去掉图床的「同系列序号」后缀（TRK/Island1.fullborder.jpg → Island）。
+ * 之前只吃空格分隔的序号（`\s+\d+$`），而文件名里数字是紧贴牌名的，
+ * 结果正常版的基本地被判成改名异画、反被排除掉（bug：海岛 → 好战者号与没用的海岛）。
+ */
 export function faceNameFromUrl(url: string | null | undefined): string | null {
   if (!url) return null
   try {
     const file = decodeURIComponent(url.split('/').pop() ?? '')
     const stem = file.replace(/\.(fullborder|borderless)?\.jpe?g$/i, '').replace(/\.png$/i, '')
-    const clean = stem.replace(/[_-]+/g, ' ').replace(/\s+\d+$/, '').trim()
+    const clean = stem.replace(/[_-]+/g, ' ').replace(/[\s_-]*\d+$/, '').trim()
     return clean || null
   } catch {
     return null
@@ -65,12 +76,37 @@ export function isArtVariant(cardName: string | null | undefined, imageUrl: stri
   return true
 }
 
-/** 从搜索结果里挑「最像本体」的那条：精确同名 > 非改名异画 > 第一条 */
+/** 卡片是否就是这个名字（英文 name 或中文 name_zh 都算命中）。
+ *  注意列表接口的 name 是英文，用中文查牌时必须靠 name_zh 才能精确命中。 */
+export function cardMatchesName(
+  c: { name?: string | null; name_zh?: string | null },
+  target: string,
+): boolean {
+  const t = target.trim().toLowerCase()
+  if (!t) return false
+  return (c.name ?? '').trim().toLowerCase() === t || (c.name_zh ?? '').trim().toLowerCase() === t
+}
+
+/** 名字里包含查询词（服务器模糊搜索时的次优解，例如繁简不同写法的近邻卡） */
+function nameContains(c: { name?: string | null; name_zh?: string | null }, target: string): boolean {
+  const t = target.trim().toLowerCase()
+  if (!t) return false
+  return (c.name ?? '').toLowerCase().includes(t) || (c.name_zh ?? '').toLowerCase().includes(t)
+}
+
+/**
+ * 从搜索结果里挑「最像本体」的那条：
+ *   ① 精确同名（英文或中文）→ ② 名字包含查询词 → ③ 兜底第一条
+ * ①②③ 内部都是「非改名异画优先」。
+ *
+ * 少了第 ① 步就会出 bug：查「海岛」时没有任何英文名等于「海岛」，
+ * 于是从「 Lord of Atlantis 之类的模糊结果」里挑走了 The Belligerent and Useless Island。
+ */
 export function pickBestCard(items: ForgeCard[], name: string): ForgeCard | null {
   if (items.length === 0) return null
-  const target = name.trim().toLowerCase()
-  const exact = items.filter((c) => (c.name ?? '').toLowerCase() === target)
-  const pool = exact.length > 0 ? exact : items
+  let pool = items.filter((c) => cardMatchesName(c, name))
+  if (pool.length === 0) pool = items.filter((c) => nameContains(c, name))
+  if (pool.length === 0) pool = items
   const plain = pool.find((c) => !isArtVariant(c.name, c.image_url ?? null))
   return plain ?? pool[0] ?? null
 }
@@ -94,9 +130,9 @@ export async function collectPrintings(
   if (cardId) ids.push(cardId)
   try {
     const res = await api.cardSearch({ q: name, pageSize: 20 }, signal)
-    const target = name.trim().toLowerCase()
     for (const c of res.items ?? []) {
-      if ((c.name ?? '').toLowerCase() !== target) continue
+      // 同样要认中文名，否则查「海岛」时一条都对不上，只能拿 cardId 兜底
+      if (!cardMatchesName(c, name)) continue
       if (!ids.includes(c.id)) ids.push(c.id)
       if (ids.length >= 6) break
     }
