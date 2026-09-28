@@ -8,3 +8,4 @@ scripts/_out_*.txt
 *.local
 .vite
 scripts/_md_*.md
+*.tsbuildinfo
