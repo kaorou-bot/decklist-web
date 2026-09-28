@@ -354,9 +354,10 @@ export function showToast(msg: string) {
 /** 桌面壳注入的保存接口（见 electron/preload.cjs） */
 interface DesktopBridge {
   saveImage?: (p: { base64: string; filename: string }) => Promise<{ ok: boolean; path?: string; error?: string }>
+  saveText?: (p: { text: string; filename: string }) => Promise<{ ok: boolean; path?: string; error?: string }>
   copyImage?: (p: { base64: string }) => Promise<{ ok: boolean; error?: string }>
   showItem?: (p: { path: string }) => Promise<{ ok: boolean; error?: string }>
-  downloadsDir?: () => Promise<{ ok: boolean; dir?: string; portable?: boolean; error?: string }>
+  downloadsDir?: (p?: { kind?: 'image' | 'text' }) => Promise<{ ok: boolean; dir?: string; portable?: boolean; error?: string }>
 }
 
 function desktopBridge(): DesktopBridge | null {
@@ -419,12 +420,70 @@ export function hasDesktopBridge(): boolean {
   return !!desktopBridge()?.saveImage
 }
 
-/** 桌面端默认保存目录，用于在界面上告诉用户文件会存到哪 */
-export async function defaultSaveDir(): Promise<{ dir: string; portable: boolean } | null> {
+/**
+ * 保存文字牌表（.txt）。
+ * 桌面端同样走 IPC 写盘（便携版写 exe 同级的「牌表」目录），网页端退回 `<a download>`。
+ * 返回保存路径（桌面端）或 null。
+ */
+export async function saveTextFile(text: string, rawName: string, fallback = 'deck'): Promise<string | null> {
+  const filename = `${safeFilename(rawName, fallback)}.txt`
+  const bridge = desktopBridge()
+  if (bridge?.saveText) {
+    try {
+      const res = await bridge.saveText({ text, filename })
+      if (res?.ok && res.path) {
+        showToast(`已保存到：${res.path}`)
+        return res.path
+      }
+      showToast(res?.error ? `保存失败：${res.error}` : '保存失败')
+      return null
+    } catch (e) {
+      showToast(`保存失败：${(e as Error).message}`)
+      return null
+    }
+  }
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  return null
+}
+
+/** 复制文本到剪贴板（优先 Clipboard API，非安全上下文退回隐藏 textarea + execCommand） */
+export async function copyText(text: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+      return { ok: true }
+    }
+  } catch {
+    /* 继续走兜底 */
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = text
+    ta.style.cssText = 'position:fixed;top:-1000px;opacity:0'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    return ok ? { ok: true } : { ok: false, error: '浏览器拒绝了复制操作' }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+
+/** 桌面端默认保存目录，用于在界面上告诉用户文件会存到哪。kind: 图片走「分享图」，文字走「牌表」 */
+export async function defaultSaveDir(kind: 'image' | 'text' = 'image'): Promise<{ dir: string; portable: boolean } | null> {
   const bridge = desktopBridge()
   if (!bridge?.downloadsDir) return null
   try {
-    const res = await bridge.downloadsDir()
+    const res = await bridge.downloadsDir({ kind })
     if (!res?.ok || !res.dir) return null
     return { dir: res.dir, portable: !!res.portable }
   } catch {

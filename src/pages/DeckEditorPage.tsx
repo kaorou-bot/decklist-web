@@ -11,6 +11,8 @@ import PageHeader from '../components/PageHeader'
 import DeckVisualEditor from '../components/DeckVisualEditor'
 import { toChineseCards } from '../lib/deckName'
 import { remapVersions, type VersionMap } from '../lib/deckVersion'
+import { buildDeckText, type DeckTextLang } from '../lib/deckText'
+import DeckTextPanel from '../components/DeckTextPanel'
 import type { StatCard } from '../lib/deckStats'
 
 type Tab = 'edit' | 'stats' | 'hand'
@@ -33,6 +35,8 @@ export default function DeckEditorPage() {
   const [enriching, setEnriching] = useState(false)
   const [shot, setShot] = useState<{ blob: Blob; ext: string; name: string } | null>(null)
   const [versions, setVersions] = useState<VersionMap>({})
+  const [showText, setShowText] = useState(false)
+  const [textLang, setTextLang] = useState<DeckTextLang>('zh')
 
   // 新建时接住「存入套牌集」带来的待导入内容
   useEffect(() => {
@@ -154,6 +158,29 @@ export default function DeckEditorPage() {
     nav('/custom')
   }
 
+  // 文字牌表：牌表里写的是英文名时（meta 能查到中文）中英两边都能导，
+  // 写的是中文名时英文只能退回 ImportedCard 里记下的原名。
+  const deckText = useMemo(() => {
+    if (!parsed.ok) return ''
+    return buildDeckText(
+      {
+        name,
+        player,
+        format,
+        cards: parsed.deck.cards.map((c) => {
+          const zh = meta[c.name]?.nameZh
+          return {
+            name: zh || c.name,
+            nameEn: zh ? c.name : c.nameEn ?? null,
+            quantity: c.quantity,
+            sideboard: c.sideboard,
+          }
+        }),
+      },
+      textLang,
+    )
+  }, [parsed, meta, name, player, format, textLang])
+
   const share = async () => {
     if (!parsed.ok) return setError(parsed.error)
     setBusy(true)
@@ -203,6 +230,15 @@ export default function DeckEditorPage() {
           ext={shot.ext}
           name={shot.name}
           onClose={() => setShot(null)}
+        />
+      )}
+      {showText && parsed.ok && (
+        <DeckTextPanel
+          text={deckText}
+          filename={name.trim() || '未命名套牌'}
+          lang={textLang}
+          onLang={setTextLang}
+          onClose={() => setShowText(false)}
         />
       )}
 
@@ -292,6 +328,15 @@ export default function DeckEditorPage() {
             )}
           </span>
           <span className="row">
+            <button
+              onClick={() => {
+                setShot(null)
+                setShowText((v) => !v)
+              }}
+              disabled={!parsed.ok}
+            >
+              {showText ? '收起牌表' : '导出文字牌表'}
+            </button>
             <button onClick={share} disabled={busy || !parsed.ok}>{busy ? '生成中…' : '分享图'}</button>
             <button className="btn-primary" onClick={save} disabled={!parsed.ok}>保存</button>
             <Link to="/custom"><button>取消</button></Link>

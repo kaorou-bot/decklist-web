@@ -13,6 +13,8 @@ import { enrichCards, type CardMeta } from '../lib/enrich'
 import CardImage from '../components/CardImage'
 import CardVersionDialog from '../components/CardVersionDialog'
 import { versionKey, type VersionMap } from '../lib/deckVersion'
+import { buildDeckText, type DeckTextLang, type DeckTextSource } from '../lib/deckText'
+import DeckTextPanel from '../components/DeckTextPanel'
 import { loadDecks, saveDecks } from '../lib/storage'
 import { DeckStatsView, OpeningHandView } from '../components/DeckStats'
 import PageHeader from '../components/PageHeader'
@@ -51,6 +53,8 @@ export default function DeckDetailPage() {
   const [versionDirty, setVersionDirty] = useState(false)
   const [versionRow, setVersionRow] = useState<Row | null>(null)
   const [tab, setTab] = useState<Tab>('list')
+  const [showText, setShowText] = useState(false)
+  const [textLang, setTextLang] = useState<DeckTextLang>('zh')
   const [similar, setSimilar] = useState<ServerDeck[]>([])
   const [similarLoading, setSimilarLoading] = useState(false)
 
@@ -234,6 +238,35 @@ export default function DeckDetailPage() {
     )
   }
 
+  // 文字牌表导出的数据来源。
+  // 服务器牌表是「英文 name + 中文 name_zh」；本机套牌存的是中文名，英文名在原始记录的 nameEn 里。
+  const textSource = useMemo<DeckTextSource>(() => {
+    if (!deck) return { cards: [] }
+    const enOf = new Map<string, string>()
+    if (isLocal && id) {
+      for (const c of findLocalDeck(id)?.cards ?? []) if (c.nameEn) enOf.set(c.name, c.nameEn)
+    }
+    const toCard = (c: ServerDeckCard, sideboard: boolean) => ({
+      name: c.name_zh || c.name,
+      nameEn: isLocal ? enOf.get(c.name) ?? null : c.name,
+      quantity: c.quantity,
+      sideboard,
+    })
+    return {
+      name: deck.deck_name,
+      player: deck.player,
+      format: deck.format || deck.format_code,
+      // 指挥官并入主牌：导入端没有独立的指挥官区，这样导出→再导入张数才对得上
+      cards: [
+        ...(deck.commanders ?? []).map((c) => toCard(c, false)),
+        ...(deck.mainboard ?? []).map((c) => toCard(c, false)),
+        ...(deck.sideboard ?? []).map((c) => toCard(c, true)),
+      ],
+    }
+  }, [deck, isLocal, id])
+
+  const deckText = useMemo(() => buildDeckText(textSource, textLang), [textSource, textLang])
+
   if (loading) return <div className="empty"><span className="spinner" /> 加载套牌…</div>
   if (error && !deck) return <div className="error">{error}</div>
   if (!deck) return null
@@ -271,6 +304,14 @@ export default function DeckDetailPage() {
         }
         actions={
           <>
+            <button
+              onClick={() => {
+                setShot(null)
+                setShowText((v) => !v)
+              }}
+            >
+              {showText ? '收起牌表' : '导出文字牌表'}
+            </button>
             <button onClick={handleExport} disabled={exporting}>
               {exporting
                 ? `${phase === 'draw' ? '绘制中' : '找图中'}${progress ? ` ${progress[0]}/${progress[1]}` : '…'}`
@@ -305,6 +346,16 @@ export default function DeckDetailPage() {
           ext={shot.ext}
           name={shot.name}
           onClose={() => setShot(null)}
+        />
+      )}
+
+      {showText && (
+        <DeckTextPanel
+          text={deckText}
+          filename={deck.deck_name || '未命名套牌'}
+          lang={textLang}
+          onLang={setTextLang}
+          onClose={() => setShowText(false)}
         />
       )}
 

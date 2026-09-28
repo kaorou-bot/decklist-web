@@ -7,12 +7,16 @@ import CardImage from '../components/CardImage'
 import PageHeader from '../components/PageHeader'
 import { artCandidatesByName } from '../lib/cardArt'
 import { detailPathOf, editorPathOf } from '../lib/localDeck'
+import { buildDeckText, type DeckTextLang } from '../lib/deckText'
+import DeckTextPanel from '../components/DeckTextPanel'
 
 export default function CollectionPage() {
   const [decks, setDecks] = useState<CustomDeck[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [shot, setShot] = useState<{ blob: Blob; ext: string; name: string } | null>(null)
+  // 文字牌表：记住是哪副牌在展开，语言切换跟着它走
+  const [textOf, setTextOf] = useState<{ id: string; lang: DeckTextLang } | null>(null)
   const nav = useNavigate()
 
   useEffect(() => setDecks(loadDecks()), [])
@@ -52,6 +56,24 @@ export default function CollectionPage() {
     }
   }
 
+  const textDeck = textOf ? decks.find((d) => d.id === textOf.id) ?? null : null
+  const textContent = textDeck
+    ? buildDeckText(
+        {
+          name: textDeck.name,
+          player: textDeck.player,
+          format: textDeck.format,
+          cards: textDeck.cards.map((c) => ({
+            name: c.name,
+            nameEn: c.nameEn ?? null,
+            quantity: c.quantity,
+            sideboard: c.sideboard,
+          })),
+        },
+        textOf?.lang ?? 'zh',
+      )
+    : ''
+
   return (
     <div style={{ paddingTop: 16 }}>
       <PageHeader
@@ -70,6 +92,16 @@ export default function CollectionPage() {
           ext={shot.ext}
           name={shot.name}
           onClose={() => setShot(null)}
+        />
+      )}
+
+      {textDeck && textOf && (
+        <DeckTextPanel
+          text={textContent}
+          filename={textDeck.name || '未命名套牌'}
+          lang={textOf.lang}
+          onLang={(l) => setTextOf({ id: textOf.id, lang: l })}
+          onClose={() => setTextOf(null)}
         />
       )}
 
@@ -117,6 +149,14 @@ export default function CollectionPage() {
                   </div>
                   <div className="row wrap" style={{ marginTop: 8 }} onClick={(e) => e.stopPropagation()}>
                     <button onClick={() => nav(editorPathOf(d.id))}>编辑</button>
+                    <button
+                      onClick={() => {
+                        setShot(null)
+                        setTextOf((p) => (p?.id === d.id ? null : { id: d.id, lang: 'zh' }))
+                      }}
+                    >
+                      牌表
+                    </button>
                     <button onClick={() => share(d)} disabled={busy === d.id}>
                       {busy === d.id ? '生成中…' : '分享图'}
                     </button>

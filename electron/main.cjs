@@ -196,25 +196,22 @@ async function bindServer(root) {
 // （界面不动、DevTools 也不再应答）。改成渲染进程把 base64 发过来、主进程直接写盘。
 /**
  * 默认保存目录：
- * - 便携版：electron-builder 会注入 PORTABLE_EXECUTABLE_DIR，就把图存到 exe 所在目录下的
- *   「分享图」子文件夹——用户放程序的那个文件夹里直接能看到，符合"便携"的直觉；
+ * - 便携版：electron-builder 会注入 PORTABLE_EXECUTABLE_DIR，就存到 exe 所在目录下的子文件夹
+ *   「分享图」（图片）/「牌表」（文字牌表）——用户放程序的那个文件夹里直接能看到，符合"便携"的直觉；
  * - 安装版 / 开发环境：系统「下载」文件夹。
  * 便携版若写不进去（程序放在只读目录等），自动退回「下载」文件夹。
  */
-function defaultSaveDir() {
+function defaultSaveDir(kind) {
   const portable = process.env.PORTABLE_EXECUTABLE_DIR
-  if (portable) return { dir: path.join(portable, '分享图'), portable: true }
+  if (portable) return { dir: path.join(portable, kind === 'text' ? '牌表' : '分享图'), portable: true }
   return { dir: app.getPath('downloads'), portable: false }
 }
 
-ipcMain.handle('dlw:save-image', async (_e, payload) => {
-  const base64 = payload && payload.base64
-  const rawName = (payload && payload.filename) || 'deck.jpg'
-  if (typeof base64 !== 'string' || !base64) return { ok: false, error: '没有图片数据' }
-  const safe = rawName.replace(/[\\/:*?"<>|]+/g, '_').trim() || 'deck.jpg'
-  const pref = defaultSaveDir()
+/** 文件名去重 + 建目录 + 写盘的公共部分（图片与文字牌表共用） */
+function writeIntoDefaultDir(buf, rawName, kind) {
+  const safe = String(rawName || 'deck').replace(/[\\/:*?"<>|]+/g, '_').trim() || (kind === 'text' ? 'deck.txt' : 'deck.jpg')
+  const pref = defaultSaveDir(kind)
   const dirs = pref.portable ? [pref.dir, app.getPath('downloads')] : [pref.dir]
-  const buf = Buffer.from(base64, 'base64')
   let lastErr = null
   for (const dir of dirs) {
     let target = path.join(dir, safe)
@@ -232,6 +229,25 @@ ipcMain.handle('dlw:save-image', async (_e, payload) => {
     }
   }
   return { ok: false, error: String((lastErr && lastErr.message) || lastErr) }
+}
+
+ipcMain.handle('dlw:save-image', async (_e, payload) => {
+  const base64 = payload && payload.base64
+  const rawName = (payload && payload.filename) || 'deck.jpg'
+  if (typeof base64 !== 'string' || !base64) return { ok: false, error: '没有图片数据' }
+  return writeIntoDefaultDir(Buffer.from(base64, 'base64'), rawName, 'image')
+})
+
+/**
+ * 保存文字牌表（.txt）。
+ * 与图片走同一套目录规则：便携版写 exe 同级「牌表」目录，安装版写「下载」。
+ * 编码用 UTF-8 不带 BOM —— 带 BOM 会让 MTGO / Moxfield 这类导入器把第一张卡名读坏。
+ */
+ipcMain.handle('dlw:save-text', async (_e, payload) => {
+  const text = payload && payload.text
+  const rawName = (payload && payload.filename) || 'deck.txt'
+  if (typeof text !== 'string' || !text) return { ok: false, error: '没有牌表内容' }
+  return writeIntoDefaultDir(Buffer.from(text, 'utf8'), rawName, 'text')
 })
 
 /**
@@ -271,10 +287,11 @@ ipcMain.handle('dlw:show-item', async (_e, payload) => {
   }
 })
 
-/** 默认保存目录，界面上展示给用户 */
-ipcMain.handle('dlw:downloads-dir', async () => {
+/** 默认保存目录，界面上展示给用户。payload.kind = image | text（便携版两个目录不同） */
+ipcMain.handle('dlw:downloads-dir', async (_e, payload) => {
   try {
-    const { dir, portable } = defaultSaveDir()
+    const kind = payload && payload.kind === 'text' ? 'text' : 'image'
+    const { dir, portable } = defaultSaveDir(kind)
     return { ok: true, dir, portable }
   } catch (err) {
     return { ok: false, error: String((err && err.message) || err) }
